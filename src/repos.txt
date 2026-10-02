@@ -1,0 +1,17 @@
+# repos.txt — one Git repository per line, cloned by setup.sh into /src.
+# Blank lines and lines starting with "#" are ignored.
+#
+# Format:
+#   <git-url>            [optional-target-dir]
+#
+# SSH URLs of the upstream repos. GitHub authenticates every SSH connection,
+# even to public repos, so this needs an SSH key registered on your GitHub
+# account and loaded in your host's agent (a README prerequisite). The same
+# remote then works for pushing, if your account has write access; otherwise,
+# set INATRACE_FORK_<REPO> in the root .env (see .env.example) and your fork
+# becomes `origin`, with this URL as `upstream`.
+
+git@github.com:agstack/inatrace-backend.git
+git@github.com:agstack/inatrace-frontend.git
+git@github.com:agstack/inatrace-mobile.git
+git@github.com:agstack/inatrace.git

@@ -1,0 +1,55 @@
+{
+  "name": "inatrace-platform",
+
+  // A single-service Compose stack: `app`, the toolchain image. It runs a
+  // Docker daemon of its own, so MySQL and friends are nested containers rather
+  // than sibling services. Mounts, published ports and environment live in
+  // compose.yaml, because `mounts`, `appPort` and `containerEnv` are NOT
+  // honoured for Compose-based dev containers.
+  "dockerComposeFile": "compose.yaml",
+  "service": "app",
+
+  // The single workspace mount (host ./src -> /src) is declared in compose.yaml.
+  "workspaceFolder": "/src",
+
+  // Everything runs as the non-root `dev` user created in the Dockerfile. Its
+  // uid/gid are rewritten to match the host user who owns the workspace, so
+  // files created in /src belong to you on the host whatever your uid is.
+  "remoteUser": "dev",
+  "updateRemoteUserUID": true,
+
+  // Runs on the HOST before the stack is created: resolves every host path the
+  // bind mounts need (falling back to placeholders for optional ones) and
+  // writes the .env that compose.yaml interpolates.
+  "initializeCommand": "bash .devcontainer/initialize.sh",
+
+  // Brings $HOME (a persistent volume) and /src to their expected state.
+  // Idempotent: re-run it by hand at any time with `./setup.sh`.
+  "postCreateCommand": "bash setup.sh",
+
+  // The entrypoint already starts the nested Docker daemon and the SSH agent
+  // relay; this re-checks both on every start (cheap, idempotent).
+  "postStartCommand": "/usr/local/share/container-init.sh",
+
+  // No `forwardPorts`: compose.yaml PUBLISHES the ports (host side
+  // configurable), which works with every client. An IDE's own forwarding on top
+  // would only duplicate them, so VS Code is also told not to auto-forward them
+  // when it sees something listening. Keyed by the CONTAINER port.
+  "portsAttributes": {
+    "8000": { "label": "Gateway", "onAutoForward": "ignore" },
+    "8080": { "label": "Backend", "onAutoForward": "ignore" },
+    "4200": { "label": "Frontend", "onAutoForward": "ignore" }
+  },
+
+  // VS Code only (the CLI ignores this block).
+  "customizations": {
+    "vscode": {
+      "settings": {
+        // No auto-forwarding at all: it picked up extension-host ports and
+        // URLs in terminal output. Forwards VS Code opens for a browser
+        // (Claude's /login callback) and manual "Add Port" still work.
+        "remote.autoForwardPorts": false
+      }
+    }
+  }
+}

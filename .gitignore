@@ -1,0 +1,27 @@
+# --- Cloned repositories (each versioned independently) ---
+# setup.sh clones the repos into src/ (mounted at /src in the container). Ignore
+# everything under src/ EXCEPT the workspace's own files.
+/src/*
+!/src/CLAUDE.md
+!/src/repos.txt
+!/src/setup.sh
+!/src/gateway/
+
+# --- Your settings (see .env.example) ---
+/.env
+
+# --- Generated on the host by .devcontainer/initialize.sh ---
+/.devcontainer/.env
+/.devcontainer/.state/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Editors / IDE ---
+.idea/
+*.swp
+*.swo
+*~
+.vscode/*
+!.vscode/extensions.json

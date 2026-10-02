@@ -1,0 +1,4 @@
+# The Dockerfile COPYs nothing, so keep the build context empty. This also
+# stops the (potentially huge) cloned repos under src/ from being sent to the
+# Docker daemon on every build.
+*
