@@ -9,7 +9,7 @@ FROM ubuntu:24.04
 # SYSTEM PACKAGES ONLY. Nothing is written to /home/dev here: $HOME is a named
 # volume (see compose.yaml) and would hide it after the first create. Tools and
 # config that live in $HOME — nvm/Node 14, Claude Code, the Playwright browser,
-# dotfiles — are installed by src/setup.sh, idempotently.
+# dotfiles — are installed by `.devcontainer/provision.py`, idempotently.
 #
 # LAYER ORDER IS DELIBERATE — least likely to change first, so editing a block
 # rebuilds as little as possible. Add interactive tools to the LAST apt block.
@@ -61,8 +61,8 @@ RUN if id ubuntu >/dev/null 2>&1; then userdel -r ubuntu; fi \
     && echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${USERNAME} \
     && chmod 0440 /etc/sudoers.d/${USERNAME}
 
-# Mount point of the workspace (host ./src).
-RUN mkdir -p /src && chown ${USERNAME}:${USERNAME} /src
+# Mount point of the workspace (the whole repo).
+RUN mkdir -p /workspace && chown ${USERNAME}:${USERNAME} /workspace
 
 # A private XDG_RUNTIME_DIR (pointed at by compose.yaml): Wayland clients expect
 # one, mode 0700 and owned by the running user, and a container has no logind
@@ -93,10 +93,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN printf 'pcm.!default { type pulse }\nctl.!default { type pulse }\n' > /etc/asound.conf
 
 # ---- GitHub CLI (gh) ----
+# Keys are piped to tee rather than written by `curl -o`: hosts with an
+# AppArmor profile for /usr/bin/curl (openSUSE) deny its writes outside /tmp
+# and $HOME when the build runs unconfined, as in the nested Docker.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-      -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+      | tee /usr/share/keyrings/githubcli-archive-keyring.gpg > /dev/null \
     && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
       > /etc/apt/sources.list.d/github-cli.list \
@@ -121,7 +124,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # ---- Node 24 LTS (system) ----
 # The system Node runs global tooling (the Playwright MCP server) and is the
 # default `node`. The frontend's Node 14 comes from nvm, installed in $HOME by
-# setup.sh (`nvm use 14`).
+# `.devcontainer/provision.py` (`nvm use 14`).
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
@@ -131,7 +134,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # The MCP server decides which Playwright version everything must use (it
 # resolves playwright-core from its own dependency tree), so the global
 # playwright is pinned to the version it declares. The browser BINARY is not
-# downloaded here: it lives in $HOME (~/.cache/ms-playwright) and setup.sh
+# downloaded here: it lives in $HOME (~/.cache/ms-playwright) and `.devcontainer/provision.py`
 # installs the matching build. `install-deps` only apt-installs the ~40 system
 # libraries Chromium needs.
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
@@ -156,27 +159,33 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 ENV JAVA_HOME=/usr/lib/jvm/default-java
 
 # Maven from Apache's tarball, pinned, so every developer builds with the same
-# version.
+# version. Fetched from Maven Central, a CDN that keeps every release:
+# archive.apache.org throttles downloads.
 ARG MAVEN_VERSION=3.9.16
-RUN curl -fsSL "https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz" \
+RUN curl -fsSL "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/${MAVEN_VERSION}/apache-maven-${MAVEN_VERSION}-bin.tar.gz" \
       -o /tmp/maven.tar.gz \
     && mkdir -p /opt/maven \
     && tar -xzf /tmp/maven.tar.gz -C /opt/maven --strip-components=1 \
     && rm /tmp/maven.tar.gz \
     && ln -sfn /opt/maven/bin/mvn /usr/local/bin/mvn
 
+# ---- uv ----
+# Runs the platform's CLI (bin/inatrace) with the dependencies in pyproject.toml.
+# Pinned, from Astral's image.
+COPY --from=ghcr.io/astral-sh/uv:0.12.22 /uv /uvx /usr/local/bin/
+
 # ---- Docker engine, for docker-IN-docker ----
 # A full daemon inside the dev container, NOT the host socket. Nested
 # containers publish their ports on this container's own network namespace, so
 # `docker run -p 3306:3306 mysql` is reachable on localhost from the backend
-# running here; bind mounts of /src paths resolve inside this container; and
+# running here; bind mounts of /workspace paths resolve inside this container; and
 # the host's Docker stays untouched. Requires `privileged: true` and the
 # /var/lib/docker volume, both in compose.yaml.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-         -o /etc/apt/keyrings/docker.asc \
+         | tee /etc/apt/keyrings/docker.asc > /dev/null \
     && chmod a+r /etc/apt/keyrings/docker.asc \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "${VERSION_CODENAME}") stable" \
       > /etc/apt/sources.list.d/docker.list \
@@ -280,6 +289,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
       bash-completion \
+      btop \
       htop \
       iproute2 \
       jq \
@@ -296,11 +306,19 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # onboarding flag, MCP registrations) in one directory. GIT_CONFIG_GLOBAL is a
 # writable config that includes the read-only host ~/.gitconfig (mounted at
 # ~/.gitconfig.host). NG_CLI_ANALYTICS stops the Angular CLI from prompting.
-ENV CLAUDE_CONFIG_DIR=/home/${USERNAME}/.claude \
+# UV_PROJECT_ENVIRONMENT keeps the CLI's virtualenv on the home volume, next to
+# uv's cache, instead of .venv/ in the checkout, which the host may use too.
+# INATRACE_DEVCONTAINER tells `.devcontainer/provision.py` it runs here, where it may change $HOME.
+ENV INATRACE_DEVCONTAINER=1 \
+    CLAUDE_CONFIG_DIR=/home/${USERNAME}/.claude \
     GIT_CONFIG_GLOBAL=/home/${USERNAME}/.gitconfig.local \
     NVM_DIR=/home/${USERNAME}/.nvm \
     NG_CLI_ANALYTICS=false \
-    PATH=/home/${USERNAME}/.local/bin:${PATH}
+    PATH=/home/${USERNAME}/.local/bin:${PATH} \
+    UV_PROJECT_ENVIRONMENT=/home/${USERNAME}/.local/share/inatrace-platform/venv
+
+# The platform's CLI, on every process's PATH (the repo is always at /workspace).
+RUN ln -s /workspace/bin/inatrace /usr/local/bin/inatrace
 
 USER ${USERNAME}
-WORKDIR /src
+WORKDIR /workspace

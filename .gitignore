@@ -1,16 +1,15 @@
 # --- Cloned repositories (each versioned independently) ---
-# setup.sh clones the repos into src/ (mounted at /src in the container). Ignore
-# everything under src/ EXCEPT the workspace's own files.
-/src/*
-!/src/CLAUDE.md
-!/src/repos.txt
-!/src/setup.sh
-!/src/gateway/
+# `inatrace repos sync` clones the repos into repos/; only the list is versioned.
+/repos/*
+!/repos/repos.txt
+
+# --- Scratch files: notes, dumps, anything not to commit ---
+/tmp/
 
 # --- Your settings (see .env.example) ---
 /.env
 
-# --- Generated on the host by .devcontainer/initialize.sh ---
+# --- Generated on the host by `.devcontainer/initialize.py` ---
 /.devcontainer/.env
 /.devcontainer/.state/
 
@@ -25,3 +24,8 @@ Thumbs.db
 *~
 .vscode/*
 !.vscode/extensions.json
+
+# --- Python ---
+__pycache__/
+.venv/
+.pytest_cache/

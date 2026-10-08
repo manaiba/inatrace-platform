@@ -1,4 +1,4 @@
-# repos.txt — one Git repository per line, cloned by setup.sh into /src.
+# repos.txt — one Git repository per line, cloned by setup.sh into this directory.
 # Blank lines and lines starting with "#" are ignored.
 #
 # Format:

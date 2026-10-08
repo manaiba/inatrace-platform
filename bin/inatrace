@@ -1,0 +1,9 @@
+#!/bin/sh
+# The inatrace CLI: run `inatrace --help`. uv (https://docs.astral.sh/uv/) runs it
+# with the dependencies in pyproject.toml, installing them on first use.
+root="$(dirname "$(dirname "$(readlink -f "$0")")")"
+if ! command -v uv >/dev/null 2>&1; then
+  echo "inatrace needs uv: https://docs.astral.sh/uv/getting-started/installation/" >&2
+  exit 1
+fi
+exec uv run --quiet --locked --project "$root" inatrace "$@"

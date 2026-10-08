@@ -9,23 +9,23 @@
   "dockerComposeFile": "compose.yaml",
   "service": "app",
 
-  // The single workspace mount (host ./src -> /src) is declared in compose.yaml.
-  "workspaceFolder": "/src",
+  // The single workspace mount (the repo -> /workspace) is declared in compose.yaml.
+  "workspaceFolder": "/workspace",
 
   // Everything runs as the non-root `dev` user created in the Dockerfile. Its
   // uid/gid are rewritten to match the host user who owns the workspace, so
-  // files created in /src belong to you on the host whatever your uid is.
+  // files created in /workspace belong to you on the host whatever your uid is.
   "remoteUser": "dev",
   "updateRemoteUserUID": true,
 
   // Runs on the HOST before the stack is created: resolves every host path the
   // bind mounts need (falling back to placeholders for optional ones) and
-  // writes the .env that compose.yaml interpolates.
-  "initializeCommand": "bash .devcontainer/initialize.sh",
+  // writes the .env that compose.yaml interpolates. Needs python3 >= 3.10.
+  "initializeCommand": "python3 .devcontainer/initialize.py",
 
-  // Brings $HOME (a persistent volume) and /src to their expected state.
-  // Idempotent: re-run it by hand at any time with `./setup.sh`.
-  "postCreateCommand": "bash setup.sh",
+  // Brings $HOME (a persistent volume) and the repos to their expected state.
+  // Idempotent: re-run it by hand at any time with `.devcontainer/provision.py`.
+  "postCreateCommand": "python3 .devcontainer/provision.py",
 
   // The entrypoint already starts the nested Docker daemon and the SSH agent
   // relay; this re-checks both on every start (cheap, idempotent).
@@ -48,7 +48,10 @@
         // No auto-forwarding at all: it picked up extension-host ports and
         // URLs in terminal output. Forwards VS Code opens for a browser
         // (Claude's /login callback) and manual "Add Port" still work.
-        "remote.autoForwardPorts": false
+        "remote.autoForwardPorts": false,
+        // Source Control finds the clones in repos/<name>, one level deeper
+        // than the default scan, next to the platform repo itself.
+        "git.repositoryScanMaxDepth": 2
       }
     }
   }

@@ -1,0 +1,40 @@
+[project]
+name = "inatrace-platform"
+version = "0.1.0"
+description = "Dev environment for INATrace: the repos, the dev stack and their CLI"
+requires-python = ">=3.10"
+# Both serve the interface: typer derives the commands, their options, --help
+# and completion from the functions themselves; rich draws doctor's report.
+# What runs on the host before the dev container exists (.devcontainer/) is not
+# part of this project and imports neither.
+dependencies = [
+    "typer>=0.27.1,<0.28",
+    "rich>=15.0.0,<16",
+]
+
+[project.scripts]
+inatrace = "inatrace.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=9.1.1,<10"]
+# smoke-tests/, run by `inatrace smoke`.
+smoke = [
+    { include-group = "dev" },
+    "requests>=2.32,<3",
+    "playwright>=1.50,<2",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.22,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "inatrace"
+module-root = ""
+
+[tool.pytest.ini_options]
+testpaths = ["inatrace/tests", ".devcontainer/tests"]
+# .devcontainer/ scripts import their helpers as `common`, from their own directory.
+pythonpath = [".devcontainer"]
+# Lets the two tests/ packages coexist without a conftest hack.
+addopts = "--import-mode=importlib -q"

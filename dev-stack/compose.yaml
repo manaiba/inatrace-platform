@@ -1,0 +1,100 @@
+# The dev stack: what INATrace needs around the code you are working on.
+#
+# Always: the gateway (one origin for the browser, routed like production),
+# MySQL and Mailpit. Per mode, the backend and/or the frontend run from their
+# published images instead of from your checkout:
+#
+#   mode           backend (:8080)        frontend (:4200)
+#   fullstack-dev  mvn spring-boot:run    npm run dev
+#   back-dev       mvn spring-boot:run    image
+#   front-dev      image                  npm run dev
+#   images         image                  image
+#
+# An image publishes on the same port its native counterpart would use, so the
+# gateway never changes: it runs on the host network (Linux) and proxies to
+# localhost. A native process left running on a port an image needs makes the
+# image fail with "port is already allocated", rather than one silently
+# shadowing the other.
+#
+# The mode is a Compose profile. `inatrace stack up` reads INATRACE_MODE and the
+# images from the root .env; by hand:
+#
+#   COMPOSE_PROFILES=front-dev docker compose --env-file .env -f dev-stack/compose.yaml up -d
+name: inatrace-dev-stack
+
+services:
+  gateway:
+    image: nginx:1.30.5-alpine
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./gateway.conf:/etc/nginx/conf.d/default.conf:ro
+
+  mysql:
+    image: mysql:8.4.11
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: inatrace
+      MYSQL_USER: inatrace
+      MYSQL_PASSWORD: inatrace
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uinatrace", "-pinatrace"]
+      interval: 5s
+      retries: 30
+
+  # Catches every e-mail the backend sends: SMTP on 1025, inbox at /mailpit/ on
+  # the gateway.
+  mail:
+    image: axllent/mailpit:v1.31.3
+    restart: unless-stopped
+    environment:
+      MP_WEBROOT: /mailpit/
+      # Accept any SMTP credentials, so the mail settings need no real account.
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+
+  backend:
+    profiles: [front-dev, images]
+    image: ${INATRACE_BACKEND_IMAGE:-ghcr.io/agstack/inatrace-backend}:${INATRACE_BACKEND_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      # Links in e-mails point at the gateway as the browser reaches it: on the
+      # host, through the dev container's published port (INATRACE_GATEWAY_PORT).
+      # Environment variables override backend.properties.
+      INATRACE_EMAILCONFIRMATION_URL: http://127.0.0.1:${INATRACE_GATEWAY_PORT:-8000}/confirm-email/
+      INATRACE_PASSWORDRESET_URL: http://127.0.0.1:${INATRACE_GATEWAY_PORT:-8000}/reset-password/
+    volumes:
+      - ./backend.properties:/app/config/application.properties:ro
+      - storage:/data/storage
+
+  frontend:
+    profiles: [back-dev, images]
+    image: ${INATRACE_FRONTEND_IMAGE:-ghcr.io/agstack/inatrace-frontend}:${INATRACE_FRONTEND_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT_NAME: DEV
+      APP_BASE_URL: http://127.0.0.1:${INATRACE_GATEWAY_PORT:-8000}
+      QR_CODE_BASE_PATH: q-cd
+      RELATIVE_FILE_UPLOAD_URL: /api/common/document
+      RELATIVE_FILE_UPLOAD_URL_MANUAL_TYPE: /api/common/document
+      RELATIVE_IMAGE_UPLOAD_URL: /api/common/image
+      RELATIVE_IMAGE_UPLOAD_URL_ALL_SIZES: /api/common/image
+    ports:
+      - "127.0.0.1:4200:8080"
+
+volumes:
+  mysql:
+  storage:
