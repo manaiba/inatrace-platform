@@ -33,3 +33,6 @@ __pycache__/
 .venv/
 .pytest_cache/
 .ruff_cache/
+
+# --- The tutorial video (docs/video/): what it makes ---
+/docs/video/out/
