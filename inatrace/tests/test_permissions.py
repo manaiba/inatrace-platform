@@ -70,7 +70,7 @@ class PermissionsTest(unittest.TestCase):
                 mock.patch.object(permissions, "umask", return_value=0o022):
             result = CliRunner().invoke(cli.app, ["fix-permissions"])
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn("fix-permissions: 4 files and directories", result.output)
+        self.assertIn("4 files and directories", result.output)
         self.assertEqual(self.mode("loose"), 0o644)
 
 

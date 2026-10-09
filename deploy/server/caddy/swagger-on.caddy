@@ -1,0 +1,7 @@
+# The API description and Swagger UI, open to anyone (springdoc lives outside /api).
+reverse_proxy /v3/api-docs* backend:8080 {
+	header_up X-Forwarded-For {client_ip}
+}
+reverse_proxy /swagger-ui* backend:8080 {
+	header_up X-Forwarded-For {client_ip}
+}

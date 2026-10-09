@@ -1,0 +1,5 @@
+# Let's Encrypt's staging: for tests that obtain certificates again and again. Its limits
+# are far higher than production's (5 alike a week), but browsers do not trust its CA.
+tls {
+	ca https://acme-staging-v02.api.letsencrypt.org/directory
+}

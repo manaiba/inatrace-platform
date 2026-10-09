@@ -74,6 +74,11 @@ def status(dest: Path) -> str:
     return f"on {branch} → {tracked}: {', '.join(p for p in parts if p) or 'up to date'}"
 
 
+def _done(repo: Repo, action: str, state: str) -> None:
+    ui.show("repo", {"name": repo.name, "action": action, "status": state},
+            lambda: ui.info(f"{repo.name}: {state}"))
+
+
 def sync(repos: list[Repo], repos_dir: Path, forks: dict[str, str]) -> None:
     """Clones missing repos and fetches existing ones. Never merges or pulls, so
     local branches stay as they were. Remotes change only while origin is still
@@ -97,7 +102,7 @@ def sync(repos: list[Repo], repos_dir: Path, forks: dict[str, str]) -> None:
                 remotes = shell.output(["git", "-C", dest, "remote"], check=False).split()
                 ui.info(f"{repo.name}: fetching {', '.join(remotes)}")
                 _git(dest, "fetch", "--all", "--prune", "--quiet")
-                ui.info(f"{repo.name}: {status(dest)}")
+                _done(repo, "fetched", status(dest))
             elif dest.exists():
                 raise ui.StepError(f"{dest} exists but is not a git repo")
             elif fork:
@@ -105,9 +110,11 @@ def sync(repos: list[Repo], repos_dir: Path, forks: dict[str, str]) -> None:
                 shell.run(["git", "clone", "--quiet", fork, dest])
                 _set_upstream(dest, repo.url)
                 _git(dest, "fetch", "--quiet", "upstream")
+                _done(repo, "cloned", status(dest))
             else:
                 ui.info(f"cloning {repo.name}")
                 shell.run(["git", "clone", "--quiet", repo.url, dest])
+                _done(repo, "cloned", status(dest))
         except (ui.StepError, OSError, subprocess.CalledProcessError) as error:
             ui.warn(f"{repo.name}: {error}")
             failed.append(repo.name)

@@ -1,0 +1,2 @@
+# Clients connect straight to Caddy: their address is the connection's, and any
+# X-Forwarded-For they send is ignored.

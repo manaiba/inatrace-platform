@@ -1,0 +1,3 @@
+# A certificate from Caddy's own authority (self-signed): for an IP address.
+# Browsers warn until its root (/data/caddy/pki/authorities/local/root.crt) is trusted.
+tls internal

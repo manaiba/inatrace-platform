@@ -3,7 +3,7 @@
 Dev environment for [INATrace](https://github.com/agstack/inatrace): the INATrace repos cloned
 side by side, a dev stack routed like production (gateway, MySQL, Mailpit, and the backend and
 frontend images), and `bin/inatrace`, the CLI that drives them. Inside a dev container or on your
-own Linux machine.
+own Linux machine. It also [deploys](docs/deploy.md) INATrace to a server you reach with ssh.
 
 ## Quick start
 
@@ -35,5 +35,8 @@ runs as `bin/inatrace`: [Getting started → On your machine](docs/getting-start
 | [Configuration](docs/configuration.md) | Every setting in `.env`: modes, images, forks, the dev container |
 | [Dev stack](docs/dev-stack.md) | Modes, running from your checkout, ports and links, data |
 | [Dev container](docs/dev-container.md) | Provisioning, ports, SSH agent, what persists, IDEs, troubleshooting |
-| [Smoke tests](docs/smoke-tests.md) | End-to-end checks of the running stack |
+| [Smoke tests](docs/smoke-tests.md) | End-to-end checks of the running stack, or (only reading) of a deployment |
+| [CLI](docs/cli.md) | `inatrace`'s conventions (flags, dry runs, confirmation) and its `--json` events |
+| [Deploy](docs/deploy.md) | INATrace on a server you reach with ssh: setup, updates, backups, HTTPS, the client's address, destroying it |
+| [Deploy example](docs/deploy-example-gcp-cloudflare.md) | One deploy from start to end: Google Cloud, Let's Encrypt, then Cloudflare in front |
 | [Premises](docs/premises.md) | Settled choices, and what they rule out |

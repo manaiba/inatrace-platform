@@ -8,6 +8,8 @@ Settings live in `.env` at the repository root, which git ignores. A template is
 cp .env.example .env && chmod 600 .env
 ```
 
+A server you deploy to has settings of its own, in its instance: see [Deploy](deploy.md).
+
 `.env` is the only source: variables exported in your shell are ignored, so a stray export never
 changes the setup. Every key is optional; the values below are the defaults unless noted.
 

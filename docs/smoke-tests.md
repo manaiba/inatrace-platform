@@ -26,14 +26,31 @@ every check passes.
 |---|---|---|
 | Images | non-root users; no configuration baked in; runtime files; embedded version (when the tag is a version); OCI labels from CI | per part running from an image |
 | Database | Flyway migrations recorded; 249 countries seeded | always |
-| API | OpenAPI public; anonymous request rejected; registration sends the confirmation e-mail (Mailpit) and its link confirms the address; login; authenticated profile; no unexpected `ERROR` in the backend log | always (log: image) |
+| API | OpenAPI public (closed on a deployment with Swagger off); anonymous request rejected; registration sends the confirmation e-mail (Mailpit) and its link confirms the address; login; authenticated profile; no unexpected `ERROR` in the backend log | always (log: image) |
 | File storage | upload; download returns the same bytes; file on the storage volume | always (volume: image) |
 | Web | `index.html`; deep links; bundles; `env.js` generated from the image's environment; nginx non-root, no nginx errors | always (env.js, nginx: image) |
 | Browser | login page without JavaScript errors; runtime settings; login through the UI | always |
 | Lifecycle | stop on SIGTERM, start again; login and uploaded file after the restart; not killed for memory | `--lifecycle`, image only |
+| Deployment | the certificate visitors get valid (behind a CDN, the CDN's), and the server's own valid and not expiring (with a domain; not with Let's Encrypt's staging); HTTP redirects to HTTPS; without the secret header the site refuses (with one); Caddy's admin API off; backend and frontend run the images in `.env`; every container not root, capabilities dropped, no new privileges, healthy; a backup newer than `INATRACE_BACKUP_DAYS` (a deployment less than a day old may have none yet), and one scheduled (`INATRACE_BACKUP_SCHEDULE`); disk under 90% | `deploy smoke` only |
 
 A part running from your checkout skips the image checks, with the reason in the report. Its
 confirmation e-mail check needs [mail sent to Mailpit](dev-stack.md#running-from-your-checkout).
+
+## Against a deployment
+
+```
+inatrace deploy smoke <name>                              # at https://<site>
+inatrace deploy smoke vm --url https://127.0.0.1:10443    # through a forwarded port
+```
+
+The same checks against a server set up with [`inatrace deploy`](deploy.md), only reading: the
+site, the API, the bundles and the browser from outside, at its address, as a visitor reaches
+it; the images, the database and the logs over ssh, with docker on the server. The checks that
+create data (a user, an upload) or restart services do not run, the database is queried in a
+read-only session, and there is no cleanup: nothing is made to clean. With a domain the
+certificate must be valid; with an IP address (self-signed) it is not checked. The secret
+header, when the instance has one, goes with every request. A deployment also gets checks of its
+own (Deployment, above): the edge, the containers' hardening, the versions, backups and room.
 
 ## What it leaves behind
 
@@ -51,7 +68,7 @@ Activation is the one step outside the API, because it needs an admin: the tests
 | Path | Purpose |
 |---|---|
 | `smoke-tests/conftest.py` | options, fixtures (stack, user, upload, browser), the cleanup and the report |
-| `smoke-tests/common/devstack.py` | the running stack: which parts are images, the gateway, SQL, the services' containers |
+| `smoke-tests/common/stack.py` | what the tests run against, the dev stack or a deployment: its address, its containers (docker here or over ssh), SQL |
 | `smoke-tests/common/mailpit.py` | Mailpit's API: find an e-mail, read it, delete them |
 | `smoke-tests/tests/NN_area.py` | the checks, one file per area, in order; lifecycle last |
 

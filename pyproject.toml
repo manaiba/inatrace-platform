@@ -38,3 +38,5 @@ testpaths = ["inatrace/tests", ".devcontainer/tests"]
 pythonpath = [".devcontainer"]
 # Lets the two tests/ packages coexist without a conftest hack.
 addopts = "--import-mode=importlib -q"
+# The wizard's hidden input falls back to plain stdin under the test runner.
+filterwarnings = ["ignore::getpass.GetPassWarning"]

@@ -13,7 +13,7 @@ class ModeTest(unittest.TestCase):
         self.assertEqual(stack.mode(settings, "front-dev"), "front-dev")
 
     def test_unknown(self):
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(stack.ui.StepError):
             stack.mode(config.Settings(values={"INATRACE_MODE": "prod"}))
 
 

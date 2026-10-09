@@ -10,7 +10,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
-from . import paths, permissions, shell
+from . import paths, permissions, shell, ui
 
 NVM_DIR = Path(os.environ.get("NVM_DIR", Path.home() / ".nvm"))
 # inatrace-frontend (Angular 10) does not run on newer Node majors.
@@ -89,31 +89,42 @@ def checks() -> list[tuple[str, bool]]:
 
 def report() -> int:
     results = checks()
-    table = Table(title="environment", title_justify="left", show_header=False, box=None,
-                  padding=(0, 2))
-    for label, ok in results:
-        table.add_row(label, "[green]OK[/]" if ok else "[yellow]UNAVAILABLE[/]")
+    browser = None
     if in_devcontainer():
-        headless = os.environ.get("PLAYWRIGHT_HEADLESS", "true") == "true"
-        table.add_row("browser", "headless" if headless else "headed")
+        browser = "headless" if os.environ.get("PLAYWRIGHT_HEADLESS", "true") == "true" else "headed"
     tight, state = permissions_status()
-    table.add_row("permissions", "[green]OK[/]" if tight else f"[yellow]{state}[/]")
-    console = Console()
-    console.print()
-    console.print(table)
-    console.print()
+    hints = []
     if in_devcontainer():
-        console.print("UNAVAILABLE is expected for optional features the host does not provide "
-                      "(token, agent, audio, wayland). See docs/dev-container.md.")
+        hints.append("UNAVAILABLE is expected for optional features the host does not provide "
+                     "(token, agent, audio, wayland). See docs/dev-container.md.")
     else:
-        console.print("Java 17 and Maven are needed for the backend, Node 14 for the frontend, "
-                      "only in the modes that run them from your checkout. See docs/getting-started.md.")
+        hints.append("Java 17 and Maven are needed for the backend, Node 14 for the frontend, "
+                     "only in the modes that run them from your checkout. See docs/getting-started.md.")
     if not tight:
         if "writable by others" in state:
-            console.print("Others may write to files here: inatrace fix-permissions.")
+            hints.append("Others may write to files here: inatrace fix-permissions.")
         if permissions.umask_lets_others_write():
-            console.print("New files will be writable by others too (umask): see "
-                          "docs/dev-container.md → Troubleshooting.")
+            hints.append("New files will be writable by others too (umask): see "
+                         "docs/dev-container.md → Troubleshooting.")
     if not dict(results)["gateway"]:
-        console.print("Start the dev stack (gateway, MySQL, Mailpit) with: inatrace stack up")
+        hints.append("Start the dev stack (gateway, MySQL, Mailpit) with: inatrace stack up")
+
+    def render() -> None:
+        table = Table(title="environment", title_justify="left", show_header=False, box=None,
+                      padding=(0, 2))
+        for label, ok in results:
+            table.add_row(label, "[green]OK[/]" if ok else "[yellow]UNAVAILABLE[/]")
+        if browser:
+            table.add_row("browser", browser)
+        table.add_row("permissions", "[green]OK[/]" if tight else f"[yellow]{state}[/]")
+        console = Console()
+        console.print()
+        console.print(table)
+        console.print()
+        for hint in hints:
+            console.print(hint)
+
+    ui.show("doctor", {"checks": [{"name": label, "ok": ok} for label, ok in results],
+                       "browser": browser, "permissions": {"ok": tight, "state": state}, "hints": hints},
+            render)
     return 0

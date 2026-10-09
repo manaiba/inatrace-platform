@@ -1,0 +1,5 @@
+# Behind a load balancer on the private network: X-Forwarded-For is read from the
+# right, skipping private addresses; what the client wrote on the left is ignored.
+trusted_proxies static private_ranges
+trusted_proxies_strict
+client_ip_headers X-Forwarded-For

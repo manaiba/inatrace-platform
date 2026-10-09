@@ -1,7 +1,12 @@
-"""Shared fixtures, the cleanup and the final report. See docs/smoke-tests.md."""
+"""Shared fixtures, the cleanup and the final report. See docs/smoke-tests.md.
+
+Against a deployment (`inatrace deploy smoke`) only what reads runs: the tests that
+create data (WRITES: a user, an upload, a restart) are left out."""
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
 import secrets
 import sys
@@ -13,8 +18,8 @@ import requests
 from rich.console import Console
 from rich.table import Table
 
-from common.devstack import DevStack, Service, now
 from common.mailpit import Mailpit
+from common.stack import Service, Stack, target
 
 log = logging.getLogger("smoke")
 
@@ -30,14 +35,32 @@ def pytest_addoption(parser):
                      help="seconds to wait for the backend to answer")
 
 
+# Fixtures that create data, and the tests that restart services.
+WRITES = {"credentials", "session", "uploaded", "mailpit"}
+_target: Stack | None = None
+
+
+def the_target() -> Stack:
+    global _target
+    if _target is None:
+        _target = target()
+    return _target
+
+
 def pytest_collection_modifyitems(config, items):
     if not config.getoption("--lifecycle"):
         items[:] = [i for i in items if Path(i.fspath).stem != "07_lifecycle"]
+    if the_target().writes:  # the dev stack: not the deployment's own checks
+        kept = [i for i in items if Path(i.fspath).stem != "08_deployment"]
+    else:  # a deployment: only what reads
+        kept = [i for i in items if not WRITES & set(i.fixturenames) and Path(i.fspath).stem != "07_lifecycle"]
+    config.hook.pytest_deselected(items=[i for i in items if i not in kept])
+    items[:] = kept
 
 
 # --- the stack ------------------------------------------------------------------------------
 
-def cleanup(stack: DevStack) -> None:
+def cleanup(stack: Stack) -> None:
     """Best effort: removes what the smoke tests create, from this run or an earlier one."""
     def attempt(what: str, step) -> None:
         try:
@@ -62,14 +85,23 @@ def cleanup(stack: DevStack) -> None:
 
 
 @pytest.fixture(scope="session")
-def stack(request) -> DevStack:
-    stack = DevStack()
+def stack(request) -> Stack:
+    stack = the_target()
     stack.check()
     stack.wait_backend(request.config.getoption("--boot-timeout"))
-    stack.started = now()
+    stack.started = stack.now()
+    if not stack.writes:
+        yield stack
+        return
     cleanup(stack)
     yield stack
     cleanup(stack)
+
+
+def writing(stack: Stack) -> None:
+    """A guard in each fixture that creates data, should one be asked for anyway."""
+    if not stack.writes:
+        raise RuntimeError(f"{stack.name} is only read: nothing may be created there")
 
 
 @pytest.fixture(scope="session")
@@ -92,6 +124,7 @@ def frontend(stack) -> Service:
 
 @pytest.fixture(scope="session")
 def mailpit(stack) -> Mailpit:
+    writing(stack)
     return Mailpit(stack.base_url)
 
 
@@ -99,8 +132,9 @@ def mailpit(stack) -> Mailpit:
 def credentials(stack, mailpit) -> dict:
     """A user registered through the API, its e-mail confirmed with the link the backend
     sent to Mailpit, then activated in the database (activation needs an admin)."""
+    writing(stack)
     user = {"email": f"{PREFIX}{secrets.token_hex(4)}@example.com", "password": "smoke-test-password"}
-    response = requests.post(f"{stack.base_url}/api/user/register",
+    response = stack.http.post(f"{stack.base_url}/api/user/register",
                              json={**user, "name": "Smoke", "surname": "Test"}, timeout=10)
     response.raise_for_status()
 
@@ -111,7 +145,7 @@ def credentials(stack, mailpit) -> dict:
         token = found.group(1) if found else None
     confirmed = None
     if token:
-        confirmed = requests.post(f"{stack.base_url}/api/user/confirm_email",
+        confirmed = stack.http.post(f"{stack.base_url}/api/user/confirm_email",
                                   json={"token": token}, timeout=10).status_code
     stack.sql(f"update User set status='ACTIVE' where email='{user['email']}'")
     return {**user, "mail": mail, "token": token, "confirmed": confirmed}
@@ -119,12 +153,14 @@ def credentials(stack, mailpit) -> dict:
 
 @pytest.fixture(scope="session")
 def session(stack, credentials) -> requests.Session:
+    writing(stack)
     return stack.login(credentials["email"], credentials["password"])
 
 
 @pytest.fixture(scope="session")
 def uploaded(stack, session) -> dict:
     """A random file uploaded through the API; the storage tests and the restart test use it."""
+    writing(stack)
     name = f"{PREFIX}{secrets.token_hex(4)}.bin"
     content = secrets.token_bytes(64 * 1024)
     response = session.post(f"{stack.base_url}/api/common/document", timeout=30,
@@ -157,7 +193,7 @@ def browser():
 @pytest.fixture
 def page(browser, stack):
     """A fresh browser page; `page.errors` collects JavaScript errors."""
-    context = browser.new_context()
+    context = stack.browser_context(browser)
     page = context.new_page()
     page.errors = []
     page.on("pageerror", lambda error: page.errors.append(f"pageerror: {error}"))
@@ -178,11 +214,19 @@ def detail(record_property):
 SECTIONS = {
     "01_images": "Images", "02_database": "Database", "03_api": "API",
     "04_storage": "File storage", "05_web": "Web", "06_browser": "Browser",
-    "07_lifecycle": "Lifecycle",
+    "07_lifecycle": "Lifecycle", "08_deployment": "Deployment",
 }
 STYLE = {"passed": "[green]✔ pass[/]", "failed": "[red]✘ fail[/]", "skipped": "[yellow]↷ skip[/]",
          "error": "[red]✘ error[/]"}
 results: dict[str, list[tuple[str, str, str, float]]] = defaultdict(list)
+# `inatrace --json smoke`: a JSON event a line on this pipe, for each check and at the end.
+EVENTS = os.fdopen(int(os.environ["SMOKE_EVENTS_FD"]), "w", buffering=1) \
+    if os.environ.get("SMOKE_EVENTS_FD") else None
+
+
+def emit(event: str, **fields) -> None:
+    if EVENTS:
+        EVENTS.write(json.dumps({"event": event, **fields}, ensure_ascii=False) + "\n")
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -199,15 +243,31 @@ def pytest_runtest_makereport(item, call):
         detail = (report.longrepr.reprcrash.message if hasattr(report.longrepr, "reprcrash")
                   else str(report.longrepr)).splitlines()[0][:150]
     name = (item.function.__doc__ or item.name).strip().splitlines()[0]
-    results[Path(item.fspath).stem].append((name, outcome, detail, report.duration))
+    module = Path(item.fspath).stem
+    results[module].append((name, outcome, detail, report.duration))
+    emit("test", area=SECTIONS.get(module, module), check=name, outcome=outcome, detail=detail,
+         seconds=round(report.duration, 1))
+
+
+def pytest_collectreport(report):
+    if report.failed:
+        emit("error", message=f"collecting {report.nodeid}: {str(report.longrepr).splitlines()[-1]}")
+
+
+def pytest_sessionfinish(session, exitstatus):
+    counts = defaultdict(int)
+    for rows in results.values():
+        for _, outcome, _, _ in rows:
+            counts[outcome] += 1
+    emit("report", target=the_target().name, counts=dict(counts), ok=exitstatus == 0,
+         lifecycle=session.config.getoption("--lifecycle"))
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
     if not results:
         return
     console = Console(width=None if sys.stdout.isatty() else 140)
-    mode = DevStack().mode
-    table = Table(title=f"Smoke tests — dev stack in {mode} mode", title_justify="left",
+    table = Table(title=f"Smoke tests — {the_target().name}", title_justify="left",
                   header_style="bold")
     table.add_column("Area")
     table.add_column("Check")
@@ -225,5 +285,8 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     console.print(table)
     summary = ", ".join(f"{n} {k}" for k, n in counts.items())
     console.print(f"[bold {'green' if exitstatus == 0 else 'red'}]{summary}[/]")
-    if not config.getoption("--lifecycle"):
+    if not the_target().writes:
+        console.print("Only what reads ran: the checks that create data (a user, an upload) or "
+                      "restart services do not run against a deployment.")
+    elif not config.getoption("--lifecycle"):
         console.print("Lifecycle checks (stop/start of the images) not run: --lifecycle.")

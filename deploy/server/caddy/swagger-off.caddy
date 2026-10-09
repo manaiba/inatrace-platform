@@ -1,0 +1,3 @@
+# The API description and Swagger UI stay closed.
+respond /v3/api-docs* 404
+respond /swagger-ui* 404

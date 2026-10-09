@@ -32,6 +32,15 @@ by the platform repo.
    wrong, in the same commit: for the platform, the matching page in `docs/` (commands,
    settings, ports, behavior), the README's table if a page is added, and `docs/premises.md`
    when a settled choice changes. A change that needs no doc update is fine; a stale doc is not.
+9. **CLI conventions** (`inatrace`): every question has a flag; `--auto-approve` skips only the
+   final confirmation; a missing answer without a terminal fails naming its flag; common options
+   get a short form too (`-n` dry run, `-w [seconds]` watch, `-f` follow). Ask everything
+   first (reads only), show what will happen, act once confirmed; anything that changes
+   something takes `--dry-run` (only look, say what it would do). Output goes through
+   `inatrace/ui.py` (sections, ✓ ! ✗, spinners with timings), never bare `print`; what has a
+   shape (a plan, a status, a list) goes through `ui.show`, so `--json` gets it as data, and
+   another program's output is an `output` event (or goes to stderr). A new command works with
+   `--json` from the start, and its events go in `docs/cli.md`. Waits always have a timeout.
 
 ## Layout
 
@@ -40,11 +49,15 @@ by the platform repo.
 ├── .devcontainer/  the dev container: Dockerfile, compose, initialize.py and cleanup.py (host),
 │                   provision.py (inside); tests in .devcontainer/tests/
 ├── bin/inatrace    the platform's CLI (python), with or without the dev container: repos sync, stack, smoke, doctor,
-│                   fix-permissions
+│                   fix-permissions, deploy
 ├── inatrace/       its code (typer, rich; run through uv); tests in inatrace/tests/
 ├── pyproject.toml  the CLI's dependencies, and pytest for both test dirs (`uv run pytest`)
 ├── dev-stack/      gateway, MySQL, Mailpit, and per mode the backend/frontend images (`inatrace stack up`)
-├── smoke-tests/    end-to-end checks of the running dev stack (`inatrace smoke`)
+├── smoke-tests/    end-to-end checks of the running dev stack (`inatrace smoke`), or only reading,
+│                   of a deployment (`inatrace deploy smoke`)
+├── deploy/         a server over ssh: server/ (compose, Caddy, backup scripts) goes there with
+│                   instances/<name>/ (git-ignored: .env with secrets, local backups);
+│                   prereqs/ installs Docker there per distribution; `inatrace deploy`
 ├── docs/           the platform's documentation; premises.md holds the settled choices
 ├── repos/
 │   ├── repos.txt   list of repos to clone

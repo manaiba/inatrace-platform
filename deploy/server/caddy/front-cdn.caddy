@@ -1,0 +1,4 @@
+# Behind a CDN: its header (INATRACE_CDN_IP_HEADER) names the client. Trusted from
+# any address, so set INATRACE_ORIGIN_SECRET or a firewall limited to the CDN.
+trusted_proxies static 0.0.0.0/0 ::/0
+client_ip_headers {$INATRACE_CDN_IP_HEADER}

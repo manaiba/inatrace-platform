@@ -1,0 +1,238 @@
+# INATrace on one server: Caddy at the edge (HTTPS), the frontend and the backend
+# images, MySQL. Everything comes from the .env next to this file; see
+# deploy/.env.example in the inatrace-platform repo and docs/deploy.md.
+#
+#   docker compose up -d        start or apply a change in .env
+#   ./backup.sh                 dump MySQL and the uploads into backups/
+#
+# Only Caddy publishes ports (80 and 443). The rest talk on the Compose network; the
+# optional monitoring (profile monitoring) listens on 127.0.0.1 only, reached over ssh.
+name: inatrace
+
+# Every container: no process gains privileges it started without (setuid binaries
+# included), and none keeps a Linux capability it does not need.
+x-hardened: &hardened
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  caddy:
+    <<: *hardened
+    # The image's caddy binary carries this file capability: without it, it cannot start.
+    cap_add:
+      - NET_BIND_SERVICE
+    image: caddy:2.11.7-alpine
+    # Not root: Docker lets any user bind ports below 1024 inside a container, and the
+    # image's /data/caddy and /config/caddy are writable by all.
+    user: "10001:10001"
+    restart: unless-stopped
+    depends_on: [backend, frontend]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      INATRACE_SITE: ${INATRACE_SITE:?set INATRACE_SITE in .env}
+      INATRACE_TLS: ${INATRACE_TLS:-acme}
+      INATRACE_FRONT: ${INATRACE_FRONT:-direct}
+      INATRACE_CDN_IP_HEADER: ${INATRACE_CDN_IP_HEADER:-}
+      INATRACE_ORIGIN_SECRET: ${INATRACE_ORIGIN_SECRET:-}
+      INATRACE_SWAGGER: ${INATRACE_SWAGGER:-off}
+    healthcheck:
+      # Any HTTP answer on port 80 (its redirect to HTTPS): Caddy is up.
+      test: ["CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/ | grep -qv '^000$'"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 1m
+      start_interval: 2s
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy:/etc/caddy/conf:ro
+      # The certificates: keep them, or each new container asks Let's Encrypt again.
+      - caddy-data:/data
+      - caddy-config:/config
+
+  frontend:
+    <<: *hardened
+    image: ${INATRACE_FRONTEND_IMAGE:-ghcr.io/agstack/inatrace-frontend}:${INATRACE_FRONTEND_VERSION:?set INATRACE_FRONTEND_VERSION in .env}
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT_NAME: ${INATRACE_ENVIRONMENT:-PROD}
+      APP_BASE_URL: https://${INATRACE_SITE}
+      QR_CODE_BASE_PATH: q-cd
+      RELATIVE_FILE_UPLOAD_URL: /api/common/document
+      RELATIVE_FILE_UPLOAD_URL_MANUAL_TYPE: /api/common/document
+      RELATIVE_IMAGE_UPLOAD_URL: /api/common/image
+      RELATIVE_IMAGE_UPLOAD_URL_ALL_SIZES: /api/common/image
+      GOOGLE_MAPS_API_KEY: ${INATRACE_GOOGLE_MAPS_API_KEY:-}
+      MAPBOX_ACCESS_TOKEN: ${INATRACE_MAPBOX_ACCESS_TOKEN:-}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 1m
+      start_interval: 2s
+
+  backend:
+    <<: *hardened
+    image: ${INATRACE_BACKEND_IMAGE:-ghcr.io/agstack/inatrace-backend}:${INATRACE_BACKEND_VERSION:?set INATRACE_BACKEND_VERSION in .env}
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    # backend.properties holds what never changes per server; these, what does.
+    # Environment variables override the properties files.
+    environment:
+      INATRACE_ENV: ${INATRACE_ENVIRONMENT:-PROD}
+      SPRING_DATASOURCE_PASSWORD: ${INATRACE_DB_PASSWORD:?set INATRACE_DB_PASSWORD in .env}
+      INATRACE_AUTH_JWTSIGNINGKEY: ${INATRACE_JWT_KEY:?set INATRACE_JWT_KEY in .env}
+      INATRACE_EMAILCONFIRMATION_URL: https://${INATRACE_SITE}/confirm-email/
+      INATRACE_PASSWORDRESET_URL: https://${INATRACE_SITE}/reset-password/
+      INATRACE_FE_URL: https://${INATRACE_SITE}/
+      INATRACE_MAIL_SENDINGENABLED: ${INATRACE_MAIL_ENABLED:-false}
+      INATRACE_MAIL_TEMPLATE_FROM: ${INATRACE_MAIL_FROM:-}
+      SPRING_MAIL_HOST: ${INATRACE_MAIL_HOST:-}
+      SPRING_MAIL_PORT: ${INATRACE_MAIL_PORT:-587}
+      SPRING_MAIL_USERNAME: ${INATRACE_MAIL_USERNAME:-}
+      SPRING_MAIL_PASSWORD: ${INATRACE_MAIL_PASSWORD:-}
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: ${INATRACE_MAIL_AUTH:-true}
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: ${INATRACE_MAIL_STARTTLS:-true}
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_SSL_ENABLE: ${INATRACE_MAIL_SSL:-false}
+    healthcheck:
+      # It answers HTTP: 401 for a request without a session. Its /actuator/health needs a
+      # login too (the backend's security covers it), and MySQL has a check of its own.
+      test: ["CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/user/profile | grep -q '^401$'"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 3m
+      start_interval: 2s
+    volumes:
+      - ./backend.properties:/app/config/application.properties:ro
+      - ./backend.local.properties:/app/config/local.properties:ro
+      - storage:/data/storage
+
+  mysql:
+    <<: *hardened
+    # Its entrypoint starts as root to own the data directory, then becomes `mysql`.
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETUID
+      - SETGID
+    image: mysql:8.4.11
+    restart: unless-stopped
+    environment:
+      # Read only when the database is created: changing them later changes nothing.
+      MYSQL_ROOT_PASSWORD: ${INATRACE_DB_ROOT_PASSWORD:?set INATRACE_DB_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: inatrace
+      MYSQL_USER: inatrace
+      MYSQL_PASSWORD: ${INATRACE_DB_PASSWORD:?set INATRACE_DB_PASSWORD in .env}
+    volumes:
+      - mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      retries: 60
+
+  # `docker compose run --rm -T tools …`: backup.sh and restore.sh reading and
+  # writing the uploads, as the backend's own user, from its image.
+  tools:
+    <<: *hardened
+    profiles: [tools]
+    image: ${INATRACE_BACKEND_IMAGE:-ghcr.io/agstack/inatrace-backend}:${INATRACE_BACKEND_VERSION:?set INATRACE_BACKEND_VERSION in .env}
+    entrypoint: []
+    volumes:
+      - storage:/data/storage
+
+  # --- Monitoring (INATRACE_MONITORING=on): Beszel, a dashboard of the server and its
+  # containers. `inatrace deploy dashboard` opens it through ssh; it is never published.
+
+  # Docker makes volumes owned by root: hand Beszel's to its user, once per start.
+  beszel-init:
+    <<: *hardened
+    profiles: [monitoring]
+    image: caddy:2.11.7-alpine
+    user: "0:0"
+    cap_add:
+      - CHOWN
+      - FOWNER
+    entrypoint: ["sh", "-c", "chown 10003:10003 /beszel_data /beszel_socket /beszel_agent && chmod 700 /beszel_socket"]
+    volumes:
+      - beszel-data:/beszel_data
+      - beszel-socket:/beszel_socket
+      - beszel-agent:/beszel_agent
+
+  # The hub: the dashboard and the history. Logged in already as its one user: whoever
+  # reaches it has ssh to the server anyway.
+  beszel:
+    <<: *hardened
+    profiles: [monitoring]
+    image: henrygd/beszel:0.21.0
+    user: "10003:10003"
+    restart: unless-stopped
+    depends_on:
+      beszel-init:
+        condition: service_completed_successfully
+    environment:
+      APP_URL: http://localhost:8090
+      USER_EMAIL: admin@inatrace.local
+      USER_PASSWORD: ${INATRACE_MONITORING_PASSWORD:-}
+      AUTO_LOGIN: admin@inatrace.local
+    ports:
+      - "127.0.0.1:8090:8090"
+    volumes:
+      - beszel-data:/beszel_data
+      - beszel-socket:/beszel_socket
+    healthcheck:
+      test: ["CMD", "/beszel", "health", "--url", "http://localhost:8090"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 1m
+      start_interval: 2s
+
+  # The agent: reads the server (its network, so host networking) and Docker (its
+  # socket, read only; that is as good as root on the server, which is why the
+  # monitoring is optional). The hub reaches it through a socket they share, so the
+  # same user. Its key is the hub's, which `up` reads and keeps in .env.
+  beszel-agent:
+    <<: *hardened
+    profiles: [monitoring]
+    image: henrygd/beszel-agent:0.21.0
+    user: "10003:10003"
+    group_add:
+      - "${INATRACE_DOCKER_GID:-65534}"
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      beszel-init:
+        condition: service_completed_successfully
+    environment:
+      LISTEN: /beszel_socket/beszel.sock
+      KEY: ${INATRACE_MONITORING_KEY:-}
+    volumes:
+      - beszel-agent:/var/lib/beszel-agent
+      - beszel-socket:/beszel_socket
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "/agent", "health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 1m
+      start_interval: 2s
+
+volumes:
+  mysql:
+  storage:
+  caddy-data:
+  caddy-config:
+  beszel-data:
+  beszel-socket:
+  beszel-agent:

@@ -1,8 +1,5 @@
 """Stop and start of the services that run from images. Opt-in (--lifecycle):
 it interrupts them. Runs last; leaves them running."""
-import requests
-
-from common.devstack import now
 
 
 def test_backend_stops_on_sigterm(backend, detail):
@@ -43,9 +40,9 @@ def test_frontend_stops_on_sigterm(frontend, detail):
 
 def test_frontend_starts_again(stack, frontend, detail):
     """Frontend starts again, env.js generated again"""
-    since = now()
+    since = stack.now()
     frontend.start()
     detail(f"serving after {stack.wait_frontend(60):.0f}s")
-    env_js = requests.get(f"{stack.base_url}/assets/env.js", timeout=10).text
+    env_js = stack.http.get(f"{stack.base_url}/assets/env.js", timeout=10).text
     assert f"['environmentName'] = '{frontend.env['ENVIRONMENT_NAME']}'" in env_js
     assert "[emerg]" not in frontend.logs(since)

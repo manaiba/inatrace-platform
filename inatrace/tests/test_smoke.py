@@ -27,9 +27,10 @@ class RunTest(unittest.TestCase):
         self.assertEqual(pytest[-3:-1], ["-k", "api"])
 
     def test_stops_when_the_browser_cannot_be_installed(self):
-        code, calls = self.run_smoke(False, False, [], returncodes=(1,))
-        self.assertEqual(code, 1)
-        self.assertEqual(len(calls), 1)
+        with mock.patch.object(smoke.subprocess, "run", return_value=mock.Mock(returncode=1)) as run, \
+                self.assertRaises(smoke.ui.StepError):
+            smoke.run(False, False, [])
+        self.assertEqual(run.call_count, 1)
 
 
 if __name__ == "__main__":

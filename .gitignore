@@ -9,6 +9,9 @@
 # --- Your settings (see .env.example) ---
 /.env
 
+# --- Deploy instances: settings and secrets of your servers (`inatrace deploy init`) ---
+/deploy/instances/
+
 # --- Generated on the host by `.devcontainer/initialize.py` ---
 /.devcontainer/.env
 /.devcontainer/.state/
@@ -29,3 +32,4 @@ Thumbs.db
 __pycache__/
 .venv/
 .pytest_cache/
+.ruff_cache/

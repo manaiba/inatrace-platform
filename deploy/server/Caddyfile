@@ -1,0 +1,41 @@
+# The edge: HTTPS, the client's real address, and the routes of the dev gateway
+# (dev-stack/gateway.conf) minus Mailpit. Settings come from the environment,
+# set by compose.yaml from .env; caddy/ holds one file per choice, imported by
+# name ("tls-acme", "front-cdn", ...). See docs/deploy.md.
+{
+	servers {
+		# Whom to believe about the client's address: nobody (direct), the CDN's
+		# header, or the X-Forwarded-For from the private network (lb).
+		import conf/front-{$INATRACE_FRONT}.caddy
+	}
+	# Clients reaching an IP address send no server name.
+	default_sni {$INATRACE_SITE}
+	# tls internal: never try to add Caddy's root to the system's trust (not root here).
+	skip_install_trust
+	# The configuration is this file, static: no admin API to change it at run time.
+	admin off
+}
+
+{$INATRACE_SITE} {
+	import conf/tls-{$INATRACE_TLS}.caddy
+
+	# With a secret set, only requests carrying it (added by the CDN) get through.
+	@no_secret expression `"{$INATRACE_ORIGIN_SECRET}" != "" && {header.X-Origin-Secret} != "{$INATRACE_ORIGIN_SECRET}"`
+	respond @no_secret 403
+
+	# The backend accepts uploads up to 10 MB.
+	request_body {
+		max_size 20MB
+	}
+
+	import conf/swagger-{$INATRACE_SWAGGER}.caddy
+
+	# The backend takes the first X-Forwarded-For value as the client: send only
+	# the address Caddy settled on, never what the client wrote.
+	reverse_proxy /api/* backend:8080 {
+		header_up X-Forwarded-For {client_ip}
+	}
+	reverse_proxy frontend:8080 {
+		header_up X-Forwarded-For {client_ip}
+	}
+}

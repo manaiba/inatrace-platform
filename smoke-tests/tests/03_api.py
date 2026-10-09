@@ -3,21 +3,21 @@ confirmation e-mail, authentication."""
 import re
 
 import pytest
-import requests
-
 # Errors the backend logs on a healthy run without optional integrations
 # (exchange rate API key, GeoLite database) and a known Hibernate metamodel warning.
 KNOWN_ERRORS = re.compile(r"HHH015007|exchange rate data|GeoLite|maxmind")
 
 
-def test_openapi_is_public(stack):
-    """OpenAPI document is public"""
-    assert requests.get(f"{stack.base_url}/v3/api-docs", timeout=10).status_code == 200
+def test_openapi(stack, detail):
+    """OpenAPI document is public, or closed with Swagger off"""
+    status = stack.http.get(f"{stack.base_url}/v3/api-docs", timeout=10).status_code
+    detail(f"Swagger {'on' if stack.swagger else 'off'}: HTTP {status}")
+    assert status == (200 if stack.swagger else 404)
 
 
 def test_anonymous_is_rejected(stack):
     """Protected endpoint rejects anonymous requests"""
-    assert requests.get(f"{stack.base_url}/api/user/profile", timeout=10).status_code == 401
+    assert stack.http.get(f"{stack.base_url}/api/user/profile", timeout=10).status_code == 401
 
 
 def test_confirmation_email(credentials, detail):
