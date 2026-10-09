@@ -37,6 +37,6 @@ runs as `bin/inatrace`: [Getting started → On your machine](docs/getting-start
 | [Dev container](docs/dev-container.md) | Provisioning, ports, SSH agent, what persists, IDEs, troubleshooting |
 | [Smoke tests](docs/smoke-tests.md) | End-to-end checks of the running stack, or (only reading) of a deployment |
 | [CLI](docs/cli.md) | `inatrace`'s conventions (flags, dry runs, confirmation) and its `--json` events |
-| [Deploy](docs/deploy.md) | INATrace on a server you reach with ssh: setup, updates, backups, HTTPS, the client's address, destroying it |
+| [Deploy](docs/deploy.md) | INATrace on a server you reach with ssh, or a local VM to try it: setup, updates, backups, HTTPS, the client's address, destroying it |
 | [Deploy example](docs/deploy-example-gcp-cloudflare.md) | One deploy from start to end: Google Cloud, Let's Encrypt, then Cloudflare in front |
 | [Premises](docs/premises.md) | Settled choices, and what they rule out |

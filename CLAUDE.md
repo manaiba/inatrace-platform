@@ -49,7 +49,7 @@ by the platform repo.
 ├── .devcontainer/  the dev container: Dockerfile, compose, initialize.py and cleanup.py (host),
 │                   provision.py (inside); tests in .devcontainer/tests/
 ├── bin/inatrace    the platform's CLI (python), with or without the dev container: repos sync, stack, smoke, doctor,
-│                   fix-permissions, deploy
+│                   fix-permissions, deploy, vm (local VMs to try deploys on)
 ├── inatrace/       its code (typer, rich; run through uv); tests in inatrace/tests/
 ├── pyproject.toml  the CLI's dependencies, and pytest for both test dirs (`uv run pytest`)
 ├── dev-stack/      gateway, MySQL, Mailpit, and per mode the backend/frontend images (`inatrace stack up`)

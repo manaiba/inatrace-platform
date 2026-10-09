@@ -64,3 +64,7 @@ Some commands, also:
 | `deploy destroy` | `plan` | `actions`, `note` (what stays) |
 | `deploy admin --create --generate-password` | `password` | `email`, `password`: shown once |
 | `deploy dashboard` | `dashboard` | `url`: where the dashboard is, until the command stops |
+| `vm create` | `missing`, `vm` | what this machine lacks: `missing` (`what`, `how`, `package`), then the command fails; the VM made: `name`, `ssh` (its Host), `ports` (`ssh`, `http`, `https`), `site` |
+| `vm start` | `vm` | as for `vm create` |
+| `vm list` | `vms` | `vms` (`name`, `distro`, `running`, `ssh`, `ports`, `memory_gb`, `cpus`) |
+| `vm destroy` | `plan` | `actions`, `note` (what stays) |

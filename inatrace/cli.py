@@ -9,7 +9,7 @@ from typing import Annotated, Optional
 import typer
 
 from . import (config, doctor as doctor_, paths, permissions as permissions_, repos as repos_,
-               smoke as smoke_, stack as stack_, ui)
+               smoke as smoke_, stack as stack_, ui, vm as vm_)
 from .deploy import cli as deploy_cli
 from .options import DryRun, exit_with
 
@@ -21,6 +21,9 @@ stack_app = typer.Typer(help="The dev stack: gateway, MySQL, Mailpit and, per mo
 app.add_typer(repos_app, name="repos")
 app.add_typer(stack_app, name="stack")
 app.add_typer(deploy_cli.app, name="deploy")
+vm_app = typer.Typer(help="Local VMs to try deploys on, like a fresh cloud server: QEMU, the distribution's cloud "
+                          "image, your ssh keys (docs/deploy.md → Try it on a local VM).", no_args_is_help=True)
+app.add_typer(vm_app, name="vm")
 
 Json = Annotated[bool, typer.Option("--json", help="JSON Lines on stdout, one event a line, for programs; "
                                                    "asks nothing. Anywhere on the line (docs/cli.md → JSON).")]
@@ -149,6 +152,64 @@ def smoke(ctx: typer.Context,
     Extra options go to pytest, e.g. `inatrace smoke -- -k api`. See smoke-tests/README.md.
     """
     _run(smoke_.run, verbose, lifecycle, ctx.args)
+
+
+VmName = Annotated[str, typer.Argument(help="The VM's name, also its Host in ~/.ssh/config.")]
+Distro = Enum("Distro", {d: d for d in vm_.DISTROS}, type=str)
+AutoApprove = Annotated[bool, typer.Option("--auto-approve", help="Skip the confirmation.")]
+
+
+def _vm(action, *args) -> None:
+    try:
+        exit_with(action(*args))
+    except (vm_.VmError, ui.StepError, OSError, subprocess.SubprocessError) as error:
+        ui.error(str(error) if ui.json_mode() else f"vm: {error}", getattr(error, "flag", None))
+        raise typer.Exit(1)
+    except KeyboardInterrupt:
+        ui.blank()
+        ui.error("interrupted")
+        raise typer.Exit(130)
+
+
+@vm_app.command("create")
+def vm_create(name: VmName,
+              distro: Annotated[Distro, typer.Option(help="Its distribution.")] = Distro(vm_.DEFAULT_DISTRO),
+              memory: Annotated[int, typer.Option(help="GB of memory.")] = 4,
+              cpus: Annotated[int, typer.Option(help="CPUs.")] = 2,
+              disk: Annotated[int, typer.Option(help="GB of disk, at most (it grows as it fills).")] = 20,
+              ssh_port: Annotated[Optional[int], typer.Option(help="Its ssh, on 127.0.0.1. Without it: the first "
+                                                                   "free from 2022.")] = None,
+              http_port: Annotated[Optional[int], typer.Option(help="Its port 80. Without it: from 10080.")] = None,
+              https_port: Annotated[Optional[int], typer.Option(help="Its port 443. Without it: from 10443.")] = None,
+              dry_run: DryRun = False, auto_approve: AutoApprove = False) -> None:
+    """Make and start one, with Host <name> in ~/.ssh/config; first, what this machine lacks (installs nothing)."""
+    _vm(vm_.create, name, distro.value, memory, cpus, disk,
+        {"ssh": ssh_port, "http": http_port, "https": https_port}, dry_run, auto_approve)
+
+
+@vm_app.command("list")
+def vm_list() -> None:
+    """The VMs, running or not, with their ports."""
+    _vm(vm_.listing)
+
+
+@vm_app.command("start")
+def vm_start(name: VmName) -> None:
+    """Start one again (its disk kept what it had)."""
+    _vm(vm_.start, name)
+
+
+@vm_app.command("stop")
+def vm_stop(name: VmName) -> None:
+    """Power one off; its disk stays."""
+    _vm(vm_.stop, name)
+
+
+@vm_app.command("destroy")
+def vm_destroy(name: VmName, dry_run: DryRun = False, auto_approve: Annotated[bool, typer.Option(
+        "--auto-approve", help="Skip typing its name to confirm.")] = False) -> None:
+    """Stop one and remove it: its disk, and its Host in ~/.ssh/config (the image stays)."""
+    _vm(vm_.destroy, name, dry_run, auto_approve)
 
 
 @app.callback()

@@ -30,8 +30,8 @@ Cloud behind Cloudflare](deploy-example-gcp-cloudflare.md).
 
 ## What you need
 
-* **A server**: Debian or Ubuntu (tested on Debian 13, Ubuntu 24.04 and 26.04), 2 CPUs and 4 GB
-  of memory at least (INATrace uses about 1 GB), with
+* **A server** (or, to try it, [a local VM](#try-it-on-a-local-vm)): Debian or Ubuntu (tested on
+  Debian 13, Ubuntu 24.04 and 26.04), 2 CPUs and 4 GB of memory at least (INATrace uses about 1 GB), with
   * a user you log in as with an ssh key, who can use `sudo`
   * ports 22, 80 and 443 open (in the cloud's firewall or security group); 80 only serves the
     Let's Encrypt challenge and redirects to 443
@@ -57,6 +57,37 @@ Host inatrace-prod
 
 In the dev container, `~/.ssh/config` is the container's own (it persists with its home) and
 the keys come from your host's agent, so leave `IdentityFile` out.
+
+## Try it on a local VM
+
+No server yet, or one to try a change on first: `inatrace vm` makes a VM on your machine that
+takes a deploy as a fresh cloud server would, from a distribution's cloud image:
+
+```
+inatrace vm create demo        # Ubuntu 26.04, 4 GB, 2 CPUs (--distro debian-13 or rocky-10)
+inatrace deploy init demo      # its public address: 127.0.0.1
+inatrace deploy up demo        # the site: https://127.0.0.1:10443
+```
+
+`create` first checks this machine: x86_64 with KVM usable by you, QEMU (`qemu-system-x86_64`,
+`qemu-img`), `cloud-localds`, `curl`, `ssh`, and a key in your ssh agent. What is missing it
+lists with the package that brings it, and installs nothing (the dev container has them all).
+Then it shows what it will do and, once you confirm, downloads the image (once, into
+`~/.cache/inatrace/images`), makes a disk on top of it in `~/.local/share/inatrace/vms/<name>`,
+gives the image's user (`ubuntu`, `debian`, `rocky`) your agent's keys and `sudo` through
+cloud-init, and starts it with its ports on 127.0.0.1: ssh from 2022, HTTP from 10080, HTTPS from
+10443 (the next VM takes the next ones; `--ssh-port` and the like choose them). It adds `Host
+<name>` to `~/.ssh/config`, with the VM's host key in its own file, accepted on first contact,
+so the name is the ssh destination `deploy init` asks for; and waits until it lets ssh in.
+
+Without a domain, the certificate is self-signed, for 127.0.0.1: the browser warns once. The
+site's address for the CLI is `https://127.0.0.1`; from your machine it is reached through the
+forwarded port, so `deploy smoke demo --url https://127.0.0.1:10443`.
+
+`inatrace vm list` shows them, running or not, with their ports; `vm stop <name>` powers one off
+and `vm start <name>` starts it again, disk as it was; `vm destroy <name>` removes it, its disk
+and its `Host` (the image stays, for the next one). Each takes `--json`; `create` and `destroy`,
+`--dry-run`.
 
 ## The server
 
