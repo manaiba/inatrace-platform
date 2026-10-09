@@ -285,18 +285,31 @@ RUN chmod +x /usr/local/bin/ssh-agent-connect /usr/local/share/container-init.sh
 # iproute2: ip, ss. xvfb: a virtual X server for WebGL/MapLibre rendering in a
 # headless browser.
 # python3: node-gyp shells out to it when an npm dependency builds from source.
+# rsync: `inatrace deploy up` copies to the server with it. qemu-system-x86, qemu-utils,
+# cloud-image-utils: a local VM (cloud image + cloud-init seed, KVM) to try deploys on.
+# Looking at a network: ping (iputils-ping), dig and nslookup (dnsutils), traceroute,
+# mtr (mtr-tiny), nc (netcat-openbsd).
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
       bash-completion \
       btop \
+      cloud-image-utils \
+      dnsutils \
       htop \
       iproute2 \
+      iputils-ping \
       jq \
       less \
+      mtr-tiny \
+      netcat-openbsd \
       python3 \
+      qemu-system-x86 \
+      qemu-utils \
+      rsync \
       sqlite3 \
       tmux \
+      traceroute \
       tree \
       vim \
       xvfb
