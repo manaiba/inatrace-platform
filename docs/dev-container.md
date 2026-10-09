@@ -105,6 +105,16 @@ JetBrains: untested.
   `/var/log/dockerd.log`.
 * **ssh cannot reach the agent**: `ssh-agent-connect < /dev/null` tells whether a host agent
   answers; `/usr/local/share/container-init.sh` restarts the relay.
+* **New files are `666` and directories `777`**, in the container and on the host: Docker 29.6+
+  gives `docker exec` processes, VS Code's server and all it starts among them, a `0000` umask
+  when `dockerd` runs its own containerd, as openSUSE's packages and rootless Docker do (Docker's
+  own packages run containerd as a service, with `022`). Git ignores these bits, so `git status`
+  does not show it; `inatrace doctor` does, and `inatrace fix-permissions` removes them from the
+  platform and the repos (`chmod -R go-w`), whenever it bothers you.
+
+  Or fix it at the source for every container: point `dockerd` at the system's containerd
+  service, with `"containerd": "/run/containerd/containerd.sock"` in `/etc/docker/daemon.json`
+  and `systemctl enable --now containerd` (restarting Docker restarts every container).
 * **MySQL `EXPKEYSIG` while building**: bump the year of `RPM-GPG-KEY-mysql-*` in the Dockerfile.
 * **Upgrading from the `src/` layout**: `up` stops and prints the `mv` commands that move the
   clones to `repos/`; run them, then `up` again. Provisioning copies Claude's memory and sessions

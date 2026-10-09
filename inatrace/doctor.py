@@ -10,7 +10,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
-from . import shell
+from . import paths, permissions, shell
 
 NVM_DIR = Path(os.environ.get("NVM_DIR", Path.home() / ".nvm"))
 # inatrace-frontend (Angular 10) does not run on newer Node majors.
@@ -54,6 +54,20 @@ def _wayland() -> bool:
     return bool(display) and Path(display).is_socket()
 
 
+def permissions_status() -> tuple[bool, str]:
+    """Whether others may write to the platform's files, now or once created."""
+    found = len(permissions.writable(paths.ROOT))
+    loose = permissions.umask_lets_others_write()
+    if not found and not loose:
+        return True, "OK"
+    problems = []
+    if found:
+        problems.append(f"{found} {'path' if found == 1 else 'paths'} writable by others")
+    if loose:
+        problems.append(f"umask {permissions.umask():04o}: new ones too")
+    return False, "; ".join(problems)
+
+
 def checks() -> list[tuple[str, bool]]:
     results = [
         ("docker", shell.ok(["docker", "info"])),
@@ -82,6 +96,8 @@ def report() -> int:
     if in_devcontainer():
         headless = os.environ.get("PLAYWRIGHT_HEADLESS", "true") == "true"
         table.add_row("browser", "headless" if headless else "headed")
+    tight, state = permissions_status()
+    table.add_row("permissions", "[green]OK[/]" if tight else f"[yellow]{state}[/]")
     console = Console()
     console.print()
     console.print(table)
@@ -92,6 +108,12 @@ def report() -> int:
     else:
         console.print("Java 17 and Maven are needed for the backend, Node 14 for the frontend, "
                       "only in the modes that run them from your checkout. See docs/getting-started.md.")
+    if not tight:
+        if "writable by others" in state:
+            console.print("Others may write to files here: inatrace fix-permissions.")
+        if permissions.umask_lets_others_write():
+            console.print("New files will be writable by others too (umask): see "
+                          "docs/dev-container.md → Troubleshooting.")
     if not dict(results)["gateway"]:
         console.print("Start the dev stack (gateway, MySQL, Mailpit) with: inatrace stack up")
     return 0

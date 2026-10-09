@@ -7,7 +7,8 @@ from typing import Annotated, Optional
 
 import typer
 
-from . import config, doctor as doctor_, paths, repos as repos_, smoke as smoke_, stack as stack_, ui
+from . import (config, doctor as doctor_, paths, permissions as permissions_, repos as repos_,
+               smoke as smoke_, stack as stack_, ui)
 
 app = typer.Typer(help="Control the INATrace platform: the repos and the dev stack.",
                   no_args_is_help=True)
@@ -37,6 +38,22 @@ def _exit(code: int) -> None:
 def doctor() -> None:
     """Report what the environment provides."""
     _exit(doctor_.report())
+
+
+@app.command("fix-permissions")
+def fix_permissions() -> None:
+    """Make the platform's files and the repos writable by you alone (chmod -R go-w)."""
+    fixed, failed = permissions_.fix(paths.ROOT)
+    print(f"fix-permissions: {fixed} files and directories under {paths.ROOT} were writable "
+          "by others; no longer", flush=True)
+    for path in failed[:10]:
+        ui.warn(f"!! not yours, left as is: {path}")
+    if len(failed) > 10:
+        ui.warn(f"!! and {len(failed) - 10} more")
+    if permissions_.umask_lets_others_write():
+        print(f"Your umask is {permissions_.umask():04o}: new files will be writable by others again. "
+              "Why: docs/dev-container.md → Troubleshooting.")
+    _exit(1 if failed else 0)
 
 
 @repos_app.command()
