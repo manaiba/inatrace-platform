@@ -25,11 +25,20 @@ class ScheduleTest(unittest.TestCase):
         self.assertEqual(backups.in_words("30 3 * * *"), "daily at 03:30")
         self.assertEqual(backups.in_words("0 */6 * * *"), "0 */6 * * *")
 
+    def test_period(self):
+        self.assertEqual(backups.period("@daily"), 24)
+        self.assertEqual(backups.period("@weekly"), 168)
+        self.assertEqual(backups.period("30 3 * * *"), 24)
+        self.assertEqual(backups.period("15 * * * *"), 1)
+        self.assertIsNone(backups.period("0 */6 * * *"))
+        self.assertIsNone(backups.period("0 3 * * 1-5"))
+
     def test_added_next_to_the_users_own_lines(self):
         change, lines = self.plan("0 1 * * * ~/mine.sh\n")
         self.assertIn("daily at midnight, UTC", change)
         self.assertEqual(lines[0], "0 1 * * * ~/mine.sh")
-        self.assertTrue(lines[1].startswith("@daily cd ~/inatrace && ./backup.sh --scheduled"))
+        # backups/ made first: a new server has none, and without it the shell would run nothing
+        self.assertTrue(lines[1].startswith("@daily cd ~/inatrace && mkdir -p backups && ./backup.sh --scheduled"))
 
     def test_nothing_to_do_once_there(self):
         _, lines = self.plan("")

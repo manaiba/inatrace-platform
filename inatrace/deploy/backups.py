@@ -30,6 +30,17 @@ def in_words(schedule: str) -> str:
     return f"daily at {int(found.group(2)):02}:{int(found.group(1)):02}" if found else schedule
 
 
+def period(schedule: str) -> int | None:
+    """Hours between two scheduled backups, for the common schedules; None for another."""
+    named = {"@hourly": 1, "@daily": 24, "@midnight": 24, "@weekly": 7 * 24, "@monthly": 31 * 24}
+    if schedule in named:
+        return named[schedule]
+    fields = schedule.split()
+    if len(fields) == 5 and fields[0].isdigit() and fields[2:] == ["*", "*", "*"]:
+        return 24 if fields[1].isdigit() else 1 if fields[1] == "*" else None
+    return None
+
+
 def cron_plan(remote: Remote, instance: Instance) -> tuple[str | None, list[str]]:
     """What the server's crontab should hold (the user's lines, and ours unless off),
     and what changes, in words; None when nothing does."""
@@ -37,8 +48,9 @@ def cron_plan(remote: Remote, instance: Instance) -> tuple[str | None, list[str]
     schedule = schedule_of(instance)
     wanted = [line for line in current if CRON_MARK not in line]
     if schedule != "off":
-        wanted.append(f"{schedule} cd ~/{REMOTE_DIR} && ./backup.sh --scheduled >> backups/scheduled.log 2>&1 "
-                      f"{CRON_MARK}")
+        # backups/ first: the log goes there, and without it the shell runs nothing (a new server has none)
+        wanted.append(f"{schedule} cd ~/{REMOTE_DIR} && mkdir -p backups && ./backup.sh --scheduled "
+                      f">> backups/scheduled.log 2>&1 {CRON_MARK}")
     if wanted == current:
         return None, wanted
     if schedule == "off":

@@ -55,7 +55,7 @@ Some commands, also:
 | `stack logs`, `deploy logs` | `log` | `service`, `text` |
 | `smoke`, `deploy smoke` | `test`, `report` | `area`, `check`, `outcome`, `detail`, `seconds`; at the end `target`, `counts`, `ok`, `lifecycle` |
 | `deploy init` | `answer`, `versions`, `summary`, `next` | an answer taken from a flag; the image's versions (newest first) before asking for one; `settings`, `changed`, `will_do`, `then`; the command to run next |
-| `deploy status` | `status` | `site`, `certificate` (`issuer`, `expires`, `days`, `trusted`, `state`: `ok`, `renew`, `bad`), `server`, `containers`, `backups` (`newest`, `count`, `days`, `schedule`, `zone`), `ok` (with `-w`, one each time) |
+| `deploy status` | `status` | `site`, `certificate` (`issuer`, `expires`, `days`, `trusted`, `state`: `ok`, `renew`, `bad`), `server`, `containers`, `backups` (`newest`, `count`, `days`, `schedule`, `zone`, `late`), `ok` (with `-w`, one each time) |
 | `deploy backup list` | `backups` | `backups` (`time`, `date`, `database_bytes`, `uploads_bytes`, `server`, `here`, newest first), `schedule`, `zone`, `days`, `here` (the local directory) |
 | `deploy backup download` | `downloaded` | `times`, `into` |
 | `deploy backup create` (and before changes) | `backup` | `time` |

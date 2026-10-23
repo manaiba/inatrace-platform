@@ -245,7 +245,7 @@ services:
 issued it, how many days it has left: in yellow under 14, when renewing must have failed, in red
 under 7 or untrusted, which also fails the exit code), the server (load, memory, disk), each
 container (state, image, CPU, memory, uptime) and the backups (the newest, how many, the
-schedule); `-w`
+schedule; in yellow when the scheduled one is late, which fails the exit code too); `-w`
 redraws it full screen every two seconds (`-w 10`: every ten) until Ctrl+C, and its exit code
 says whether all is well.
 `deploy logs <name> [service] [-f]` shows the containers' logs (`caddy`, `frontend`, `backend`,
@@ -333,7 +333,9 @@ the server, named by time (UTC). One runs on its own every day at midnight, the 
 goes to `backups/scheduled.log`; with the containers down it skips). Each new one removes those
 older than 7 days (`INATRACE_BACKUP_DAYS`): by age, not by count, so a burst of backups (several
 `up`s in a row) never pushes an older one out early. `up` also makes one before changing the
-backend or the database, and `status` shows the newest and the schedule.
+backend or the database, and `status` shows the newest and the schedule, in yellow when the
+scheduled one is late (none for longer than the schedule's period and an hour, once the database
+is older than that), which also fails its exit code.
 
 They stay on the server, so they do not survive losing it: `download` copies them to your
 machine, into `deploy/instances/<name>/backups/` (git-ignored with the instance, readable by

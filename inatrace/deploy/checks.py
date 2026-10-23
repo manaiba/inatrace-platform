@@ -10,7 +10,7 @@ from rich.markup import escape
 
 from .. import shell, ui
 from .. import smoke as smoke_
-from .backups import CRON_MARK, in_words, schedule_of
+from .backups import CRON_MARK, in_words, period, schedule_of
 from .common import age, size
 from .instance import Instance, load
 from .remote import MONITORING, SERVICES, Remote, deployed
@@ -93,6 +93,7 @@ def _status_data(remote: Remote, instance: Instance) -> dict:
         "echo '#system'; . /etc/os-release; echo \"${PRETTY_NAME:-$ID}\"; "
         "docker version --format '{{.Server.Version}}'; df -P -B1 / | tail -1; "
         "free -b | awk '/^Mem:/ {print $2, $7}'; cut -d' ' -f1 /proc/loadavg; nproc; "
+        "echo '#database'; docker inspect -f '{{.Created}}' $(docker compose ps -aq mysql) 2>/dev/null; "
         "echo '#backups'; ls -1 backups 2>/dev/null | grep -- '-db.sql.gz$' | sort -r; "
         f"echo '#schedule'; crontab -l 2>/dev/null | grep -F {shlex.quote(CRON_MARK)}; date +%Z\n" + _USAGE_END,
         "the status")
@@ -150,15 +151,34 @@ def _status_data(remote: Remote, instance: Instance) -> dict:
     days = instance.get("INATRACE_BACKUP_DAYS", "7")
     scheduled = parts.get("schedule", [])
     line = next((entry for entry in scheduled if CRON_MARK in entry), "")
+    now = datetime.datetime.now(datetime.timezone.utc)
+    schedule = line.split(" cd ", 1)[0] if line else None
     data["backups"] = {"count": len(backups), "newest": backups[0] if backups else None,
-                       "days": int(days) if days.isdigit() else 7,
-                       "schedule": line.split(" cd ", 1)[0] if line else None,
-                       "zone": scheduled[-1] if scheduled and CRON_MARK not in scheduled[-1] else None}
-    data["certificate"] = certificate_of(parts.get("certificate", []), instance.get("INATRACE_TLS", "acme"),
-                                         datetime.datetime.now(datetime.timezone.utc))
+                       "days": int(days) if days.isdigit() else 7, "schedule": schedule,
+                       "zone": scheduled[-1] if scheduled and CRON_MARK not in scheduled[-1] else None,
+                       "late": late(backups[0] if backups else None, (parts.get("database") or [""])[0],
+                                    schedule, now)}
+    data["certificate"] = certificate_of(parts.get("certificate", []), instance.get("INATRACE_TLS", "acme"), now)
     data["ok"] = (data["site"]["answers"] and all(_container_color(c) == "green" for c in containers)
-                  and (data["certificate"] or {}).get("state") != "bad")
+                  and (data["certificate"] or {}).get("state") != "bad" and not data["backups"]["late"])
     return data
+
+
+def late(newest: str | None, created: str, schedule: str | None, now: datetime.datetime) -> bool:
+    """Whether the scheduled backup should have run by now and has not: the newest backup (or,
+    without one, the database's start) older than the schedule's period and an hour. A database
+    younger than that is not judged, nor a schedule whose period is not known."""
+    hours = period(schedule) if schedule else None
+    try:
+        since = datetime.datetime.fromisoformat(re.sub(r"(\.\d{6})\d+", r"\1", created.replace("Z", "+00:00")))
+    except ValueError:
+        return False
+    allowed = datetime.timedelta(hours=hours + 1) if hours else None
+    if not allowed or now - since <= allowed:
+        return False
+    if newest:
+        since = datetime.datetime.strptime(newest, "%Y%m%dT%H%M%SZ").replace(tzinfo=datetime.timezone.utc)
+    return now - since > allowed
 
 
 def _certificate_words(certificate: dict | None, tls: str, name: str) -> str:
@@ -234,6 +254,8 @@ def _status_view(name: str, destination: str, data: dict):
         last = f"  [bold]Backups[/]   [yellow]none[/] [dim](inatrace deploy backup create {name})[/]"
     last += (f" · {in_words(backups['schedule'])}, {backups['zone'] or '?'}" if backups["schedule"]
              else f" · [yellow]none scheduled[/] [dim](INATRACE_BACKUP_SCHEDULE, then inatrace deploy up {name})[/]")
+    if backups.get("late"):
+        last += " · [yellow]late: is the scheduled backup running? (~/inatrace/backups/scheduled.log)[/]"
     return Group(Padding(head, (0, 0, 0, 2)), Text(""), Padding(table, (0, 0, 0, 2)), Text(""),
                  Text.from_markup(last))
 

@@ -12,11 +12,14 @@ from inatrace.tests.deploy_fixtures import VALID
 
 
 class StatusTest(unittest.TestCase):
-    def run_status(self, containers: list[dict], codes: str = "200 401") -> tuple[int, str]:
+    def run_status(self, containers: list[dict], codes: str = "200 401", backups=("20261009T134130Z",),
+                   database: str = "", schedule: bool = False) -> tuple[int, str]:
         found = "\n".join(["#containers", *(json.dumps(c) for c in containers), "#site", codes,
                            "#system", "Ubuntu 26.04 LTS", "29.9.0", "/dev/vda1 25000000000 5000000000 x 20% /",
                            "4000000000 3000000000", "0.15", "2",
-                           "#backups", "20261009T134130Z-db.sql.gz",
+                           "#database", database, "#backups", *(f"{b}-db.sql.gz" for b in backups),
+                           *(["#schedule", f"@daily cd ~/inatrace && ./backup.sh --scheduled {checks.CRON_MARK}", "UTC"]
+                             if schedule else []),
                            "#usage", "backend 1000 501000 524288000", "interval 1000000000"])
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(paths, "DEPLOY_INSTANCES", Path(tmp)):
             instance_.save(instance_.Instance("demo", dict(VALID)))
@@ -52,6 +55,26 @@ class StatusTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("down: no container runs", text)
         self.assertNotIn("missing", text)
+
+    def test_a_scheduled_backup_that_does_not_run_fails(self):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        stamp = lambda hours: (now - datetime.timedelta(hours=hours)).strftime("%Y%m%dT%H%M%SZ")  # noqa: E731
+        created = (now - datetime.timedelta(days=13)).strftime("%Y-%m-%dT%H:%M:%S.123456789Z")
+        code, text = self.run_status(self.RUNNING, backups=(), database=created, schedule=True)
+        self.assertEqual(code, 1)
+        self.assertIn("late: is the scheduled backup running?", text)
+        code, text = self.run_status(self.RUNNING, backups=(stamp(30),), database=created, schedule=True)
+        self.assertEqual(code, 1)
+        code, text = self.run_status(self.RUNNING, backups=(stamp(3),), database=created, schedule=True)
+        self.assertEqual(code, 0)
+        self.assertNotIn("late", text)
+
+    def test_a_new_database_has_no_backup_yet(self):
+        created = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=2)).isoformat()
+        code, text = self.run_status(self.RUNNING, backups=(), database=created, schedule=True)
+        self.assertEqual(code, 0)
+        self.assertIn("none", text)
+        self.assertNotIn("late", text)
 
     def test_a_site_that_does_not_answer_fails(self):
         code, text = self.run_status(self.RUNNING, "502 502")
