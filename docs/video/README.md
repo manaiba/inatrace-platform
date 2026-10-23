@@ -20,13 +20,10 @@ Everything it makes lands in `out/` (git-ignored); the video is `out/tutorial.mp
 
 ## What it needs
 
-In the dev container (or anywhere with the platform's `uv`):
-
-* `ffmpeg` and `asciinema` (`sudo apt-get install ffmpeg asciinema`)
-* [VHS](https://github.com/charmbracelet/vhs/releases) and [ttyd](https://github.com/tsl0922/ttyd/releases)
-  on the `PATH` (VHS's `.deb`; ttyd's static binary)
-* the fonts [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono/releases) and
-  [Inter](https://github.com/rsms/inter/releases) in `~/.local/share/fonts` (then `fc-cache -f`)
+The dev container has it all. Elsewhere, with the platform's `uv`: `ffmpeg`, `asciinema`,
+[VHS](https://github.com/charmbracelet/vhs/releases) and [ttyd](https://github.com/tsl0922/ttyd/releases)
+on the `PATH`, and the fonts JetBrains Mono and Inter (Debian and Ubuntu: `fonts-jetbrains-mono`,
+`fonts-inter`); `.devcontainer/Dockerfile` installs them, pinned.
 
 The **tutorial** starts from nothing, as a newcomer would: it clones the platform (this checkout,
 with its changes) into `~/inatrace-platform`, makes the VM `demo` with `inatrace vm create demo`

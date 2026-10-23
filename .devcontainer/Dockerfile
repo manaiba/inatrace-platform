@@ -280,6 +280,29 @@ fi
 EOS
 RUN chmod +x /usr/local/bin/ssh-agent-connect /usr/local/share/container-init.sh
 
+# ---- The tutorial video's tools (docs/video/) ----
+# VHS types the commands and records the terminal (through ttyd, in a headless Chromium it
+# downloads into ~/.cache/rod on first use), asciinema keeps each session, ffmpeg joins the
+# clips; JetBrains Mono and Inter are the video's fonts. VHS and ttyd pinned, from their releases.
+ARG VHS_VERSION=0.12.1
+ARG TTYD_VERSION=1.7.7
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    arch="$(dpkg --print-architecture)" \
+    && case "${arch}" in amd64) ttyd=x86_64 ;; arm64) ttyd=aarch64 ;; *) echo "no ttyd for ${arch}" >&2; exit 1 ;; esac \
+    && curl -fsSL "https://github.com/charmbracelet/vhs/releases/download/v${VHS_VERSION}/vhs_${VHS_VERSION}_${arch}.deb" \
+         -o /tmp/vhs.deb \
+    && curl -fsSL "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.${ttyd}" \
+         -o /usr/local/bin/ttyd \
+    && chmod 755 /usr/local/bin/ttyd \
+    && apt-get update && apt-get install -y --no-install-recommends \
+         /tmp/vhs.deb \
+         asciinema \
+         ffmpeg \
+         fonts-inter \
+         fonts-jetbrains-mono \
+    && rm /tmp/vhs.deb
+
 # ---- Convenience CLI tools (THE BLOCK YOU ARE MOST LIKELY TO EDIT) ----
 # Last on purpose: adding a tool rebuilds this layer alone.
 # iproute2: ip, ss. xvfb: a virtual X server for WebGL/MapLibre rendering in a
