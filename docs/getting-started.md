@@ -5,7 +5,7 @@ on your machine. Settings are covered separately in [Configuration](configuratio
 
 ## With the dev container (recommended)
 
-The container brings every toolchain (Java 17, Maven, Node 14, Docker) and sets itself up.
+The container brings every toolchain (Java 25, Maven, Node 26, Docker) and sets itself up.
 
 ### Requirements
 * Linux host with [Docker](https://docs.docker.com/engine/install/), usable without `sudo`
@@ -76,9 +76,9 @@ Neither toolchain is needed for a part that runs from its image, see
   install them with your package manager: a smoke run names the first missing library, and
   [Playwright's system requirements](https://playwright.dev/docs/intro#system-requirements)
   list them.
-* **Java 17, Maven, Node 14**: your distro's packages, or a version manager:
+* **Java 25, Maven, Node 26**: your distro's packages, or a version manager:
   [SDKMAN!](https://sdkman.io/) for Java and Maven, [nvm](https://github.com/nvm-sh/nvm) for
-  Node (`nvm install 14`).
+  Node (`nvm install 26`).
 
 ### How to run
 1. Clone the repository, as above

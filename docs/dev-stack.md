@@ -40,7 +40,7 @@ Details in each repo's documentation.
 
 ```
 cd repos/inatrace-backend && mvn spring-boot:run
-cd repos/inatrace-frontend && nvm use 14 && npm install && npm run dev
+cd repos/inatrace-frontend && nvm use && npm install && npm run dev
 ```
 
 The backend image sends its e-mails to Mailpit as is. A backend from your checkout sends none

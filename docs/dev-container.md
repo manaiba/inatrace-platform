@@ -3,7 +3,7 @@
 What the dev container provides, what it keeps, and how to work in it. Setting it up is covered
 in [Getting started](getting-started.md#with-the-dev-container-recommended).
 
-Ubuntu 24.04 with Java 17, Maven, Node 14, Docker (its own daemon, nested), uv, `gh` and Claude
+Ubuntu 24.04 with Java 25 (Temurin), Maven, Node 26, Docker (its own daemon, nested), uv, `gh` and Claude
 Code. Everything specific to it lives in `.devcontainer/`: the image, the Compose file, and three
 scripts, `initialize.py` and `cleanup.py` on the host and `provision.py` inside.
 
@@ -29,7 +29,7 @@ flowchart LR
 
 ## Provisioning
 
-`up` runs `.devcontainer/provision.py`: shell and git config, Node 14 (nvm), Claude Code,
+`up` runs `.devcontainer/provision.py`: shell and git config, Node 26 (nvm), Claude Code,
 Playwright, `inatrace repos sync` and a final `inatrace doctor`. It is idempotent: re-run
 `.devcontainer/provision.py` whenever something looks off. It starts no services.
 
@@ -58,7 +58,7 @@ The git identity is the host's `~/.gitconfig`.
 
 | Where | Holds |
 |---|---|
-| volume `<instance>-home` → `/home/dev` | Claude Code login and sessions, shell history, `~/.m2`, `~/.npm`, Node 14, `gh` login, IDE backends |
+| volume `<instance>-home` → `/home/dev` | Claude Code login and sessions, shell history, `~/.m2`, `~/.npm`, Node 26, `gh` login, IDE backends |
 | volume `<instance>-docker` → `/var/lib/docker` | the nested Docker: images, MySQL data, uploads |
 | the repository → `/workspace` | the platform and the cloned repos |
 

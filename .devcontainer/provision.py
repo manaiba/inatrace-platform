@@ -4,7 +4,7 @@
 Runs as the devcontainer.json postCreateCommand; safe to re-run at any time:
 .devcontainer/provision.py. The image carries system packages only. $HOME is a persistent volume, and what
 lives there is installed or refreshed here: shell and git config,
-~/.ssh/known_hosts, Node 14 (nvm), Claude Code, the Playwright browser and MCP
+~/.ssh/known_hosts, Node 26 (nvm), Claude Code, the Playwright browser and MCP
 server — plus the cloned repos. Each step checks before acting, so a second
 run changes nothing and finishes quickly.
 
@@ -23,8 +23,8 @@ from pathlib import Path
 from common import env, files, shell, ui
 
 NVM_VERSION = "v0.40.8"
-# inatrace-frontend (Angular 10) does not run on newer Node majors.
-NODE_FRONTEND = "14"
+# The Node major inatrace-frontend pins in .nvmrc (`nvm use` there picks the exact version).
+NODE_FRONTEND = "26"
 
 HOME = Path.home()
 CLAUDE_CONFIG_DIR = Path(os.environ.get("CLAUDE_CONFIG_DIR", HOME / ".claude"))
@@ -123,7 +123,7 @@ def sync_repos() -> None:
 
 
 # Runs under bash: nvm is a shell function. The system Node from the image stays
-# the default; the frontend opts in with `nvm use 14`.
+# the default; the frontend opts in with `nvm use`.
 _NVM_SCRIPT = """\
 set -e
 export NVM_DIR="$1"
