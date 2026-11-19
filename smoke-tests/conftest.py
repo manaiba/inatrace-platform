@@ -78,9 +78,10 @@ def cleanup(stack: Stack) -> None:
     for table in ("ConfirmationToken", "AuthenticationToken"):
         attempt(table, lambda t=table: stack.sql(
             f"delete from {t} where user_id in (select id from ({users}) u)"))
+    # Document.uploadedBy references User: the documents go first.
+    attempt("Document", lambda: stack.sql(f"delete from Document where name like '{PREFIX}%'"))
     attempt("User_AUD", lambda: stack.sql(f"delete from User_AUD where email like '{EMAIL_LIKE}'"))
     attempt("User", lambda: stack.sql(f"delete from User where email like '{EMAIL_LIKE}'"))
-    attempt("Document", lambda: stack.sql(f"delete from Document where name like '{PREFIX}%'"))
     attempt("e-mails", lambda: Mailpit(stack.base_url).delete(f"to:{PREFIX}"))
 
 

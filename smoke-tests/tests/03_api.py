@@ -10,7 +10,8 @@ KNOWN_ERRORS = re.compile(r"HHH015007|exchange rate data|GeoLite|maxmind")
 
 def test_openapi(stack, detail):
     """OpenAPI document is public, or closed with Swagger off"""
-    status = stack.http.get(f"{stack.base_url}/v3/api-docs", timeout=10).status_code
+    # The first request after a start builds the document: about 10 s on a cold JVM.
+    status = stack.http.get(f"{stack.base_url}/v3/api-docs", timeout=30).status_code
     detail(f"Swagger {'on' if stack.swagger else 'off'}: HTTP {status}")
     assert status == (200 if stack.swagger else 404)
 
