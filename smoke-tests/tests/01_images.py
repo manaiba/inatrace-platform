@@ -19,8 +19,10 @@ def test_backend_has_no_configuration(backend):
 
 
 def test_backend_runtime_files(backend):
-    """Backend ships fonts/ and import/countries.csv"""
-    assert backend.image.shell("test -d /app/fonts && test -s /app/import/countries.csv").returncode == 0
+    """Backend ships fonts/ and the country seed"""
+    # The seed moved from import/countries.csv on disk to the classpath in 3.0.
+    assert backend.image.shell(
+        "test -d /app/fonts && test -s /app/BOOT-INF/classes/db/seed/countries.csv").returncode == 0
 
 
 def test_backend_storage_owner(backend):
@@ -76,7 +78,8 @@ def test_frontend_version(frontend, detail):
     expected = frontend.expected_version
     if not expected:
         pytest.skip(f"the tag ({frontend.image.tag}) is not a version")
-    found = frontend.image.shell(f"grep -l '{expected}' /app/main-es2015.*.js").stdout.strip()
+    # Angular 22 names the bundle main-<hash>.js; Angular 10 named it main-es2015.<hash>.js.
+    found = frontend.image.shell(f"grep -l '{expected}' /app/main*.js").stdout.strip()
     detail(expected)
     assert found, f"{expected} not found in the main bundle"
 

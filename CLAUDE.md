@@ -70,8 +70,8 @@ by the platform repo.
 
 | Repo | Stack |
 |------|-------|
-| `inatrace-backend` | Java 17 · Spring Boot 3.3 · Maven (no wrapper — use the image's `mvn`) · MySQL 8.4 |
-| `inatrace-frontend` | Angular 10 · TypeScript · npm · **Node 14** (`nvm use 14`) |
+| `inatrace-backend` | Java 25 · Spring Boot 4.1 · Maven (no wrapper — use the image's `mvn`) · MySQL 8.4 (or PostgreSQL) |
+| `inatrace-frontend` | Angular 22 · TypeScript · npm · **Node 26** (`nvm use`, from `.nvmrc`) |
 | `inatrace` | upstream docs / reference |
 
 Check each repo's own README/CLAUDE.md for specifics.

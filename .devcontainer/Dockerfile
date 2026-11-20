@@ -8,7 +8,7 @@ FROM ubuntu:24.04
 # ============================================================================
 # SYSTEM PACKAGES ONLY. Nothing is written to /home/dev here: $HOME is a named
 # volume (see compose.yaml) and would hide it after the first create. Tools and
-# config that live in $HOME — nvm/Node 14, Claude Code, the Playwright browser,
+# config that live in $HOME — nvm/Node 26, Claude Code, the Playwright browser,
 # dotfiles — are installed by `.devcontainer/provision.py`, idempotently.
 #
 # LAYER ORDER IS DELIBERATE — least likely to change first, so editing a block
@@ -123,8 +123,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 # ---- Node 24 LTS (system) ----
 # The system Node runs global tooling (the Playwright MCP server) and is the
-# default `node`. The frontend's Node 14 comes from nvm, installed in $HOME by
-# `.devcontainer/provision.py` (`nvm use 14`).
+# default `node`. The frontend's Node 26 comes from nvm, installed in $HOME by
+# `.devcontainer/provision.py` (`nvm use` in the frontend picks .nvmrc's version).
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
@@ -147,14 +147,21 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
          "@playwright/mcp@latest" \
     && playwright install-deps chromium
 
-# ---- Java 17 + Maven ----
-# inatrace-backend asks for Java 17 and has no Maven wrapper. The JAVA_HOME
-# symlink is arch-agnostic (not everyone is on amd64).
+# ---- Java 25 + Maven ----
+# inatrace-backend asks for Java 25 (Spring Boot 4) and has no Maven wrapper.
+# Ubuntu 24.04 has no OpenJDK 25 package, so the JDK is Eclipse Temurin from
+# Adoptium's repository, the same JDK the backend image is built with. The
+# JAVA_HOME symlink is arch-agnostic (not everyone is on amd64).
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
-      openjdk-17-jdk-headless \
-    && ln -sfn "/usr/lib/jvm/java-17-openjdk-$(dpkg --print-architecture)" \
+    curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public \
+      | gpg --dearmor -o /usr/share/keyrings/adoptium-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/adoptium-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/adoptium-archive-keyring.gpg] https://packages.adoptium.net/artifactory/deb $(. /etc/os-release && echo "${VERSION_CODENAME}") main" \
+      > /etc/apt/sources.list.d/adoptium.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+      temurin-25-jdk \
+    && ln -sfn "/usr/lib/jvm/temurin-25-jdk-$(dpkg --print-architecture)" \
          /usr/lib/jvm/default-java
 ENV JAVA_HOME=/usr/lib/jvm/default-java
 
