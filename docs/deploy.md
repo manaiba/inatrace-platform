@@ -25,7 +25,8 @@ Each server is an **instance**: a directory on your machine, `deploy/instances/<
 `backend.local.properties`, your additions to the backend's configuration. `inatrace deploy up`
 syncs [`deploy/server/`](../deploy/server/) and the instance's files to `~/inatrace` on the
 server, with rsync, and runs Compose there. Everything the CLI does over ssh is a plain command
-you can run [by hand](#by-hand). For one deploy from start to end, see the [example on Google
+you can run [by hand](#by-hand). Several machines can deploy the same server: `up` notices when
+someone else changed it ([more](#when-more-than-one-person-deploys-it)). For one deploy from start to end, see the [example on Google
 Cloud behind Cloudflare](deploy-example-gcp-cloudflare.md).
 
 ## What you need
@@ -224,6 +225,30 @@ the database forward only, so an older backend may not run on a database a newer
 The files in `deploy/server/` follow the platform's version: after updating your checkout of the
 platform, `up` sends the new ones. `.env` and `backend.local.properties` are yours, and only
 change when you change them.
+
+### When more than one person deploys it
+
+The instance lives on each machine that deploys it, so two copies can drift apart: someone
+updates the server from theirs, and an `up` from yours would put the old settings back. `up`
+leaves a record on the server, `~/inatrace/.deployed` (who, when, from which platform commit,
+and a fingerprint of the instance's files there), and keeps the same record in the instance
+(`deploy/instances/<name>/.deployed`): the server's settings as this machine last saw them.
+Before sending anything, and also with `--dry-run`, it compares them, and it stops when:
+
+* the server's settings differ from yours and also from what this machine last saw: someone
+  else changed them, with an `up` or by hand. It says which files and which keys differ (only
+  their names: the values are secrets);
+* the server was deployed from a platform commit this checkout does not have, newer or on
+  another branch: `up` would put older or other `deploy/server/` files there. Update your
+  checkout first.
+
+What you change here passes: the server still has what this machine last saw.
+`inatrace deploy pull <name>` brings the server's settings here (`.env`,
+`backend.local.properties`, the instance's other files), once confirmed (`--auto-approve`), after
+showing which keys change (`--dry-run` only shows them); then `up` from here sends them back
+unchanged. `up --overwrite` sends yours anyway. A server deployed before this record existed has
+none: the first `up` from a machine with different settings stops too, and `pull` (or
+`--overwrite`) settles it.
 
 A changed `Caddyfile` or `backend.properties` (or `backend.local.properties`) does not change
 the container's configuration, so Compose would not recreate it: `up` restarts Caddy or the
@@ -439,6 +464,7 @@ The CLI runs these over ssh; without it, on the server:
 ```
 ~/inatrace
 ├── .env, backend.local.properties   the instance's settings
+├── .deployed                        who deployed it last, from which platform commit
 ├── compose.yaml                     Caddy, frontend, backend, MySQL; Beszel (monitoring)
 ├── Caddyfile, caddy/                the edge: one file per choice in .env
 ├── backend.properties               the backend's fixed settings

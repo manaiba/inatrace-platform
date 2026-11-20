@@ -7,7 +7,7 @@ import typer
 
 from .. import ui
 from ..options import DryRun, exit_with
-from . import backups, checks, lifecycle, monitoring, users, wizard
+from . import backups, checks, drift, lifecycle, monitoring, users, wizard
 from .common import DeployError
 from .instance import CDN_HEADERS, FRONTS
 
@@ -113,9 +113,23 @@ def up(name: Name,
        restore: Annotated[Optional[str], typer.Option(
            metavar="TIME", help="Then put this backup back (newest: the newest, here or there); one only "
                                 "here goes to the server first.")] = None,
+       overwrite: Annotated[bool, typer.Option(
+           "--overwrite", help="Send the settings here even though the server's changed since this machine "
+                               "last deployed or pulled them, or it came from a platform this checkout lacks.")] = False,
        dry_run: DryRun = False) -> None:
-    """Copy the instance to its server and start it, or apply a change (versions, settings)."""
-    _deploy(lifecycle.up, name, backup, dry_run, restore)
+    """Copy the instance to its server and start it, or apply a change (versions, settings).
+    It stops when someone else changed the server's settings since: `pull` brings them here."""
+    _deploy(lifecycle.up, name, backup, dry_run, restore, overwrite)
+
+
+@app.command()
+def pull(name: Name,
+         auto_approve: Annotated[bool, typer.Option(
+             "--auto-approve", help="Skip the confirmation.")] = False,
+         dry_run: DryRun = False) -> None:
+    """Bring the server's settings here (.env, backend.local.properties, the instance's other
+    files), once confirmed: after someone else deployed it, or changed them there."""
+    _deploy(drift.pull, name, dry_run, auto_approve)
 
 
 @app.command()
