@@ -105,7 +105,8 @@ services:
     healthcheck:
       # It answers HTTP: 401 for a request without a session. Its /actuator/health needs a
       # login too (the backend's security covers it), and MySQL has a check of its own.
-      test: ["CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/user/profile | grep -q '^401$'"]
+      # The backend image includes Bash but does not include curl or wget.
+      test: ["CMD", "bash", "-c", 'exec 3<>/dev/tcp/127.0.0.1/8080 || exit 1; printf "GET /api/user/profile HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3; IFS= read -r -t 4 status <&3 || exit 1; case "$$status" in HTTP/*" 401 "*) exit 0 ;; *) exit 1 ;; esac']
       interval: 15s
       timeout: 5s
       retries: 3
