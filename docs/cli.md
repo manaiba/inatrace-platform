@@ -61,6 +61,7 @@ Some commands, also:
 | `deploy backup create` (and before changes) | `backup` | `time` |
 | `deploy backup delete` | `plan` | `actions`, `backups` (those that go), `left` |
 | `deploy up` | `up` | `url` (and with `--restore`, the restore's events) |
+| `deploy pull` | `plan`, `pulled` | `actions`, `note` (files kept here that the server lacks), `files` (those that come); `files`, `into` |
 | `deploy destroy` | `plan` | `actions`, `note` (what stays) |
 | `deploy admin --create --generate-password` | `password` | `email`, `password`: shown once |
 | `deploy dashboard` | `dashboard` | `url`: where the dashboard is, until the command stops |

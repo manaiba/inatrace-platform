@@ -6,7 +6,7 @@ import shutil
 import time
 
 from .. import ui
-from . import monitoring
+from . import drift, monitoring
 from .backups import CRON_MARK, available, backup_first, cron_plan, fetch, install_cron, missing_here, restore
 from .common import DeployError, would
 from .instance import Instance, load, server_files, shown
@@ -113,7 +113,8 @@ def _backs_up(backup: bool | None, running: bool, actions: list[tuple[str, str]]
     return any(service in DATA for _, service in actions) or any(s in DATA for s in restarts)
 
 
-def up(name: str, backup: bool | None = None, dry_run: bool = False, restore_time: str | None = None) -> int:
+def up(name: str, backup: bool | None = None, dry_run: bool = False, restore_time: str | None = None,
+       overwrite: bool = False) -> int:
     instance = load(name)
     remote = connect(instance)
     ui.section(f"{'Planning' if dry_run else 'Deploying'} {name} on {remote.destination}")
@@ -125,6 +126,8 @@ def up(name: str, backup: bool | None = None, dry_run: bool = False, restore_tim
             raise DeployError(f"no backup {restore_time or ''} of {name} to restore, here or there: "
                               f"inatrace deploy backup list {name}")
     _check(remote, name)
+    # Before anything changes: someone else's settings there are not overwritten unseen.
+    drift.stop(drift.check(remote, instance), name, dry_run, overwrite)
     if not dry_run:
         monitoring.settle(remote, instance)
     files = server_files(instance)
@@ -154,6 +157,7 @@ def up(name: str, backup: bool | None = None, dry_run: bool = False, restore_tim
         return 0
     with ui.doing("copying the files"):
         changes = remote.sync(files)
+        drift.record(remote, instance, drift.settings_names(instance))
     with ui.doing("pulling the images"):
         remote.must("docker compose pull --quiet --ignore-buildable", "pulling the images")
     actions, restarts = [], []

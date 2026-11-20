@@ -191,9 +191,9 @@ class Remote:
                     what=f"copying to {self.destination}")
 
     def sync(self, files: dict[str, Path], dry_run: bool = False) -> "Changes":
-        """Makes ~/inatrace hold exactly these files (name -> local file), except
-        backups/: rsync removes what is not in `files`. Says what changed, or with
-        `dry_run` what would, changing nothing."""
+        """Makes ~/inatrace hold exactly these files (name -> local file), except backups/
+        and the record of who deployed (.deployed): rsync removes what is not in `files`.
+        Says what changed, or with `dry_run` what would, changing nothing."""
         with tempfile.TemporaryDirectory(prefix="inatrace-deploy-") as staging:
             for name, source in files.items():
                 target = Path(staging, name)
@@ -202,7 +202,7 @@ class Remote:
             ssh = " ".join(shlex.quote(part) for part in self._ssh()[:-1])
             # Modes from a checkout vary (umask, mounts): 755 for directories and
             # scripts, 644 for the rest, then 600 for the secrets.
-            cmd = ["rsync", "-rlpcz", "--delete", "--exclude=/backups/", "--itemize-changes",
+            cmd = ["rsync", "-rlpcz", "--delete", "--exclude=/backups/", "--exclude=/.deployed", "--itemize-changes",
                    "--chmod=Du=rwx,Dgo=rx,Fu=rwX,Fgo=rX", "-e", ssh,
                    *(["--dry-run"] if dry_run else []),
                    f"{staging}/", f"{self.destination}:{REMOTE_DIR}/"]

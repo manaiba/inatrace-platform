@@ -176,16 +176,24 @@ def new_secret() -> str:
 LOCAL_BACKUPS = "backups"
 
 
+# What this machine last saw on the server (drift.py): it stays here too.
+LOCAL_RECORD = ".deployed"
+
+
+def instance_files(instance: Instance) -> dict[str, Path]:
+    """The instance's own files `up` sends (.env, backend.local.properties and anything else), by
+    path in it: not its backups/ nor its record of the server."""
+    return {str(path.relative_to(instance.dir)): path for path in sorted(instance.dir.rglob("*"))
+            if path.is_file() and path.relative_to(instance.dir).parts[0] not in (LOCAL_BACKUPS, LOCAL_RECORD)}
+
+
 def server_files(instance: Instance) -> dict[str, Path]:
-    """What `up` puts in ~/inatrace: deploy/server/, then the instance's own files
-    (.env, backend.local.properties and anything else, but its backups/), which win on a
-    clash."""
+    """What `up` puts in ~/inatrace: deploy/server/, then the instance's own files, which win
+    on a clash."""
     files = {str(path.relative_to(paths.DEPLOY_SERVER)): path
              for path in sorted(paths.DEPLOY_SERVER.rglob("*")) if path.is_file()}
     files[LOCAL_PROPERTIES] = paths.DEPLOY_DIR / LOCAL_PROPERTIES
-    files.update({str(path.relative_to(instance.dir)): path
-                  for path in sorted(instance.dir.rglob("*"))
-                  if path.is_file() and path.relative_to(instance.dir).parts[0] != LOCAL_BACKUPS})
+    files.update(instance_files(instance))
     return files
 
 
