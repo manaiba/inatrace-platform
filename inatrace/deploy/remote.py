@@ -2,6 +2,7 @@
 (the probe), installing it (deploy/prereqs/), waiting for a container to be healthy."""
 
 import atexit
+import json
 import os
 import re
 import select
@@ -212,10 +213,13 @@ class Remote:
                                   + result.stderr.strip())
         return Changes.parse(result.stdout)
 
-    def compose_plan(self, files: dict[str, Path]) -> list[tuple[str, str]]:
+    def compose_plan(self, files: dict[str, Path]) -> tuple[list[tuple[str, str]], list[str]]:
         """What `docker compose up` would do with these compose.yaml and .env: (action,
-        service) pairs, from Compose's own dry run. The two files go to a temporary
-        directory there, the project stays ~/inatrace, so the mounts compare right."""
+        service) pairs, from Compose's own dry run; and the images `up` would pull first, those
+        not on the server yet. The two files go to a temporary directory there, the project
+        stays ~/inatrace, so the mounts compare right. Compose's dry run needs every image it
+        looks at: a service whose image is not there yet is left out of it, and is recreated
+        (or created) once `up` pulls it."""
         temp = self.output("mktemp -d")
         if not temp:
             raise DeployError(f"could not plan on {self.destination}")
@@ -226,16 +230,37 @@ class Remote:
                                     stdin=subprocess.DEVNULL, capture_output=True, text=True)
             if copied.returncode:
                 raise DeployError(f"could not plan on {self.destination}: {copied.stderr.strip()}")
-            planned = self.must(f"docker compose --project-name inatrace --project-directory ~/{REMOTE_DIR} "
-                                f"-f {temp}/compose.yaml --env-file {temp}/.env --dry-run "
-                                "up -d --remove-orphans 2>&1", "planning")
+            compose = (f"docker compose --project-name inatrace --project-directory ~/{REMOTE_DIR} "
+                       f"-f {temp}/compose.yaml --env-file {temp}/.env")
+            images = service_images(self.must(f"{compose} config --format json", "planning"))
+            unique = sorted(set(images.values()))
+            absent = set((self.output(" ; ".join(
+                f"docker image inspect {shlex.quote(image)} >/dev/null 2>&1 || echo {shlex.quote(image)}"
+                for image in unique)) or "").split()) if unique else set()
+            waiting = sorted(service for service, image in images.items() if image in absent)
+            ready = [service for service in images if service not in waiting]
+            only = f"--no-deps {' '.join(ready)}" if waiting else ""
+            planned = self.must(f"{compose} --dry-run up -d --remove-orphans {only} 2>&1", "planning") \
+                if ready or not waiting else ""
+            existing = set((self.output(f"cd ~/{REMOTE_DIR} 2>/dev/null && docker compose ps -a --services")
+                            or "").split())
         finally:
             self.output(f"rm -rf {temp}")
-        return planned_actions(planned)
+        actions = planned_actions(planned)
+        actions += [("recreate" if service in existing else "create", service) for service in waiting]
+        return actions, sorted(absent)
 
     def plan(self) -> list[tuple[str, str]]:
         """What `docker compose up` would do with the files already in ~/inatrace."""
         return planned_actions(self.must("docker compose --dry-run up -d --remove-orphans 2>&1", "planning"))
+
+
+def service_images(config: str) -> dict[str, str]:
+    """Service -> image, from `docker compose config --format json`; not one-shot containers
+    (beszel-init), which run at every start."""
+    services = json.loads(config).get("services") or {}
+    return {name: service["image"] for name, service in services.items()
+            if service.get("image") and not name.endswith("-init")}
 
 
 def planned_actions(planned: str) -> list[tuple[str, str]]:

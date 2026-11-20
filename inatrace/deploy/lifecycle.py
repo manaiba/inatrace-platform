@@ -5,7 +5,7 @@ import shlex
 import shutil
 import time
 
-from .. import ui
+from .. import registry, ui
 from . import drift, monitoring
 from .backups import CRON_MARK, available, backup_first, cron_plan, fetch, install_cron, missing_here, restore
 from .common import DeployError, would
@@ -71,21 +71,26 @@ def prepare(name: str, dry_run: bool = False) -> int:
 
 
 def _show_plan(changes: "Changes", actions: list[tuple[str, str]], restarts: list[str],
-               backs_up: bool, schedule: str | None, restore_time: str | None = None) -> None:
+               backs_up: bool, schedule: str | None, restore_time: str | None = None,
+               pulls: list[str] | None = None) -> None:
+    pulls = pulls or []
     data = {"files": {"add": changes.added, "change": changes.changed, "remove": changes.removed},
-            "backup": backs_up, "containers": [{"action": a, "service": s} for a, s in actions],
+            "pulls": pulls, "backup": backs_up, "containers": [{"action": a, "service": s} for a, s in actions],
             "restarts": restarts, "schedule": ui.plain(schedule) if schedule else None, "restore": restore_time}
-    ui.show("plan", data, lambda: _render_plan(changes, actions, restarts, backs_up, schedule, restore_time))
+    ui.show("plan", data, lambda: _render_plan(changes, actions, restarts, backs_up, schedule, restore_time, pulls))
 
 
 def _render_plan(changes: "Changes", actions: list[tuple[str, str]], restarts: list[str],
-                 backs_up: bool, schedule: str | None, restore_time: str | None = None) -> None:
+                 backs_up: bool, schedule: str | None, restore_time: str | None = None,
+                 pulls: list[str] = ()) -> None:
     ui.out.print("  [bold]Would do:[/]")
     for title, paths_ in (("add", changes.added), ("change", changes.changed), ("remove", changes.removed)):
         if paths_:
             ui.out.print(f"   {title} [dim]in ~/{REMOTE_DIR}:[/] {', '.join(paths_)}")
     if not changes:
         ui.out.print("   [dim]no file changes[/]")
+    for image in pulls:
+        ui.out.print(f"   pull {image} [dim](not on the server yet)[/]")
     if backs_up:
         ui.out.print("   back up the database and the uploads first")
     for action, service in actions:
@@ -98,6 +103,24 @@ def _render_plan(changes: "Changes", actions: list[tuple[str, str]], restarts: l
         ui.out.print(f"   {schedule}")
     if restore_time:
         ui.out.print(f"   then restore backup {restore_time} (from here, when only here)")
+
+
+def _check_tags(images: list[str]) -> None:
+    """Whether the images `up` would pull exist in their registries: a tag that is not there
+    fails `up` halfway. A registry that cannot be asked (a private one) is only mentioned."""
+    for image in images:
+        name, _, tag = image.rpartition(":")
+        if not name or "/" in tag or "@" in image:
+            continue
+        try:
+            found = registry.tags(name)
+        except registry.RegistryError as error:
+            ui.info(f"could not check {image} in its registry: {error}")
+            continue
+        if tag not in found:
+            newest = registry.versions(found)[:3]
+            ui.warn(f"{image}: no such tag in its registry, so up would fail pulling it"
+                    + (f" (newest versions: {', '.join(newest)})" if newest else ""))
 
 
 DATA = ("backend", "mysql")
@@ -139,9 +162,11 @@ def up(name: str, backup: bool | None = None, dry_run: bool = False, restore_tim
         with ui.doing("comparing the files"):
             changes = remote.sync(files, dry_run=True)
         actions: list[tuple[str, str]] = []
+        pulls: list[str] = []
         if running:
             with ui.doing("asking Compose what it would do"):
-                actions = remote.compose_plan(files)
+                actions, pulls = remote.compose_plan(files)
+            _check_tags(pulls)
         else:
             actions = [("create", service) for service in order]
         actions += [("remove", service) for service in MONITORING if leaving]
@@ -152,7 +177,7 @@ def up(name: str, backup: bool | None = None, dry_run: bool = False, restore_tim
         restarts = [s for s, mounted in MOUNTED.items()
                     if running and s not in recreated and changes.touching(mounted)]
         _show_plan(changes, actions, restarts, _backs_up(backup, running, actions, restarts),
-                   cron_plan(remote, instance)[0], restore_time)
+                   cron_plan(remote, instance)[0], restore_time, pulls)
         ui.info("dry run: nothing was changed")
         return 0
     with ui.doing("copying the files"):

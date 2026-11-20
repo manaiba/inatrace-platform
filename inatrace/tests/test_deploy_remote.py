@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -78,3 +79,59 @@ class PrereqsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ComposePlanTest(unittest.TestCase):
+    """The dry-run plan when an image `up` would pull is not on the server yet."""
+
+    CONFIG = json.dumps({"services": {
+        "mysql": {"image": "mysql:8.4.11"},
+        "backend": {"image": "ghcr.io/agstack/inatrace-backend:3.0.0-rc.2"},
+        "frontend": {"image": "ghcr.io/agstack/inatrace-frontend:3.0.0-rc.2"},
+        "beszel-init": {"image": "busybox:1"},
+    }})
+
+    def plan(self, absent: list[str]):
+        server = remote.Remote("admin@203.0.113.10")
+        commands = []
+
+        def output(command):
+            commands.append(command)
+            if command == "mktemp -d":
+                return "/tmp/plan"
+            if "docker image inspect" in command:
+                return "\n".join(absent)
+            if "ps -a --services" in command:
+                return "mysql\nbackend\nfrontend"
+            return ""
+
+        def must(command, what):
+            commands.append(command)
+            if " config --format json" in command:
+                return self.CONFIG
+            return " Container inatrace-mysql-1  Running\n"
+
+        files = {"compose.yaml": Path("compose.yaml"), ".env": Path(".env")}
+        with mock.patch.object(server, "output", side_effect=output), \
+                mock.patch.object(server, "must", side_effect=must), \
+                mock.patch.object(remote.subprocess, "run", return_value=mock.Mock(returncode=0)):
+            actions, pulls = server.compose_plan(files)
+        return actions, pulls, [c for c in commands if "--dry-run up" in c]
+
+    def test_all_there(self):
+        actions, pulls, dry_runs = self.plan([])
+        self.assertEqual((actions, pulls), ([], []))
+        self.assertNotIn("--no-deps", dry_runs[0])
+
+    def test_a_new_image_is_left_out_and_recreated(self):
+        backend = "ghcr.io/agstack/inatrace-backend:3.0.0-rc.2"
+        actions, pulls, dry_runs = self.plan([backend])
+        self.assertEqual(pulls, [backend])
+        self.assertEqual(actions, [("recreate", "backend")])
+        self.assertIn("--no-deps mysql frontend", dry_runs[0])
+        self.assertNotIn("beszel-init", dry_runs[0])
+
+    def test_service_images(self):
+        self.assertEqual(remote.service_images(self.CONFIG)["backend"],
+                         "ghcr.io/agstack/inatrace-backend:3.0.0-rc.2")
+        self.assertNotIn("beszel-init", remote.service_images(self.CONFIG))
