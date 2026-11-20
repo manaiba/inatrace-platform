@@ -213,8 +213,11 @@ and companies are made from the site.
 
 Edit `deploy/instances/<name>/.env` (or run `init` again), then `inatrace deploy up <name>`.
 `inatrace deploy up <name> --dry-run` first shows what it would do, changing nothing: the files
-it would add, change or remove on the server, and what Compose would create, recreate or remove
-(Compose's own dry run). Every command that changes something takes `--dry-run` (`-n`).
+it would add, change or remove on the server, the images it would pull (those not there yet,
+each checked in its registry: a version that does not exist is flagged before `up` fails on it),
+and what Compose would create, recreate or remove (Compose's own dry run; a service whose new
+image is not there yet is recreated once pulled). Every command that changes something takes
+`--dry-run` (`-n`).
 
 An update is the same: set the new `INATRACE_BACKEND_VERSION` or `INATRACE_FRONTEND_VERSION`,
 then `up`. When it already runs and the backend or the database is about to change (a new

@@ -143,3 +143,35 @@ class RestoreOnUpTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CheckTagsTest(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(ui.use_json, False)
+
+    def warnings(self, images, tags=None, error=None):
+        ui.use_json(True)
+        with mock.patch.object(lifecycle.registry, "tags", return_value=tags or [],
+                               side_effect=error) as asked, \
+                mock.patch.object(lifecycle.ui, "warn") as warn, mock.patch.object(lifecycle.ui, "info") as info:
+            lifecycle._check_tags(images)
+        return asked, [c.args[0] for c in warn.call_args_list], [c.args[0] for c in info.call_args_list]
+
+    def test_a_tag_that_exists(self):
+        _, warned, _ = self.warnings(["ghcr.io/agstack/inatrace-backend:3.0.0-rc.2"], ["3.0.0-rc.2", "2.40.3"])
+        self.assertEqual(warned, [])
+
+    def test_a_tag_that_does_not(self):
+        _, warned, _ = self.warnings(["ghcr.io/agstack/inatrace-backend:3.0.0-rc.9"], ["3.0.0-rc.2", "2.40.3"])
+        self.assertIn("no such tag", warned[0])
+        self.assertIn("2.40.3", warned[0])
+
+    def test_a_registry_it_cannot_ask(self):
+        _, warned, said = self.warnings(["registry.example.org/private/app:1"],
+                                        error=lifecycle.registry.RegistryError("401"))
+        self.assertEqual(warned, [])
+        self.assertIn("could not check", said[0])
+
+    def test_by_digest_or_without_a_tag(self):
+        asked, _, _ = self.warnings(["ghcr.io/a/b@sha256:abc", "localhost:5000/app"])
+        asked.assert_not_called()

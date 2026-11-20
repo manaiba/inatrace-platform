@@ -41,7 +41,7 @@ Every command:
 | `info`, `ok`, `step`, `warn`, `fail` | `text` |
 | `start`, `end` | `task`; `end` also `ok`, `seconds` |
 | `output` | `text`: a line another program printed (Compose, an install script) |
-| `plan` | a dry run: `actions` (words), `note`; for `deploy up`, `files`, `containers`, `restarts`, `backup`, `schedule`; for `fix-permissions`, `paths` |
+| `plan` | a dry run: `actions` (words), `note`; for `deploy up`, `files`, `pulls`, `containers`, `restarts`, `backup`, `schedule`; for `fix-permissions`, `paths` |
 | `error` | `message`, and `flag` when an answer is missing |
 
 Some commands, also:
