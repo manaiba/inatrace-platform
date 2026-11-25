@@ -6,7 +6,7 @@ import shutil
 import time
 
 from .. import registry, ui
-from . import drift, monitoring
+from . import database, drift, monitoring
 from .backups import CRON_MARK, available, backup_first, cron_plan, fetch, install_cron, missing_here, restore
 from .common import DeployError, would
 from .instance import Instance, load, server_files, shown
@@ -31,10 +31,6 @@ def _wait_ready(remote: Remote, instance: Instance, minutes: int = 6) -> None:
         time.sleep(5)
     raise DeployError(f"the site did not answer as expected in {minutes} min (frontend, backend: "
                       f"{answer or 'nothing'}): inatrace deploy logs {instance.name}")
-
-
-# The way out first: each starts once what it calls is healthy.
-START_ORDER = ("mysql", "backend", "frontend", "caddy")
 
 
 def _check(remote: Remote, name: str) -> None:
@@ -123,7 +119,7 @@ def _check_tags(images: list[str]) -> None:
                     + (f" (newest versions: {', '.join(newest)})" if newest else ""))
 
 
-DATA = ("backend", "mysql")
+DATA = ("backend", "mysql", "postgres")
 
 
 def _backs_up(backup: bool | None, running: bool, actions: list[tuple[str, str]],
@@ -134,6 +130,51 @@ def _backs_up(backup: bool | None, running: bool, actions: list[tuple[str, str]]
     if not running or backup is not None:
         return running and bool(backup)
     return any(service in DATA for _, service in actions) or any(s in DATA for s in restarts)
+
+
+def _check_database(remote: Remote, selected: str) -> None:
+    """Do not mistake an engine change for a migration of existing data."""
+    prior = remote.output(f"if test -f ~/{REMOTE_DIR}/.env; then "
+                          f"sed -n 's/^INATRACE_DATABASE=//p' ~/{REMOTE_DIR}/.env | tail -n 1; "
+                          "else echo __new__; fi")
+    if prior is None:
+        raise DeployError("could not determine the server's database engine")
+    if prior != "__new__":
+        database.require_same_engine(selected, prior or "mysql")
+        if selected == "postgresql":
+            present = remote.output("docker volume inspect inatrace_postgres >/dev/null 2>&1 && echo yes || echo no")
+            if present not in ("yes", "no"):
+                raise DeployError("could not check the PostgreSQL volume")
+            if present == "yes":
+                major = remote.output(f"cd ~/{REMOTE_DIR} && docker compose exec -T postgres "
+                                      "sh -c 'cat \"$PGDATA/PG_VERSION\"'")
+                if major is None:
+                    # `down` removes containers but retains volumes. Inspect the
+                    # volume read-only with the already installed image; never pull
+                    # or start the database as part of a dry run.
+                    major = remote.output(
+                        "docker run --rm --pull=never --network none --user postgres "
+                        "--mount type=volume,src=inatrace_postgres,dst=/data,readonly "
+                        "--entrypoint sh postgis/postgis:18-3.7 -c "
+                        + shlex.quote('for f in /data/PG_VERSION /data/*/docker/PG_VERSION; do '
+                                      'if [ -f "$f" ]; then cat "$f"; exit; fi; done; exit 1'))
+                if major != database.POSTGRES_MAJOR:
+                    raise DeployError(f"the PostgreSQL volume is version {major or 'unknown'}; "
+                                      f"this deployment requires {database.POSTGRES_MAJOR}. "
+                                      "Start the existing database to check it or migrate its data first")
+        return
+    # A removed deployment directory does not imply that its volumes are gone.
+    volumes = remote.output("for db in mysql postgres; do "
+                            "docker volume inspect inatrace_$db >/dev/null 2>&1 && echo $db; "
+                            "done; true")
+    if volumes is None:
+        raise DeployError("could not check for existing database volumes")
+    for service in volumes.splitlines():
+        if service in ("mysql", "postgres"):
+            database.require_same_engine(selected, "postgresql" if service == "postgres" else "mysql")
+            if service == "postgres":
+                raise DeployError("an existing PostgreSQL volume has no deployment configuration; "
+                                  "its version cannot be verified")
 
 
 def up(name: str, backup: bool | None = None, dry_run: bool = False, restore_time: str | None = None,
@@ -149,13 +190,16 @@ def up(name: str, backup: bool | None = None, dry_run: bool = False, restore_tim
             raise DeployError(f"no backup {restore_time or ''} of {name} to restore, here or there: "
                               f"inatrace deploy backup list {name}")
     _check(remote, name)
+    selected = database.engine(instance.values)
+    _check_database(remote, selected)
     # Before anything changes: someone else's settings there are not overwritten unseen.
     drift.stop(drift.check(remote, instance), name, dry_run, overwrite)
     if not dry_run:
         monitoring.settle(remote, instance)
     files = server_files(instance)
-    running = bool(remote.output(f"cd ~/{REMOTE_DIR} && docker compose ps -q mysql 2>/dev/null"))
-    order = START_ORDER + (MONITORING if instance.monitoring else ())
+    db_service = "postgres" if selected == "postgresql" else "mysql"
+    running = bool(remote.output(f"cd ~/{REMOTE_DIR} && docker compose ps -q {db_service} 2>/dev/null"))
+    order = (db_service, "backend", "frontend", "caddy") + (MONITORING if instance.monitoring else ())
     # Turned off: its containers go (their history stays, in a volume).
     leaving = not instance.monitoring and monitoring.present(remote)
     if dry_run:
@@ -281,7 +325,8 @@ def destroy(name: str, dry_run: bool = False, auto_approve: bool = False, backup
                           f"du -sh ~/{REMOTE_DIR} 2>/dev/null | cut -f1; crontab -l 2>/dev/null | grep -cF '{CRON_MARK}'; "
                           f"ls ~/{REMOTE_DIR}/backups 2>/dev/null | grep -c -- '-db.sql.gz$'") or ""
     containers, volumes, folder, cron, server_backups = (found.splitlines() + ["0", "", "", "0", "0"])[:5]
-    running = there and bool(remote.output(f"cd ~/{REMOTE_DIR} && docker compose ps -q --status running mysql"))
+    db_service = "postgres" if database.engine(instance.values) == "postgresql" else "mysql"
+    running = there and bool(remote.output(f"cd ~/{REMOTE_DIR} && docker compose ps -q --status running {db_service}"))
     if not there and containers.strip() in ("", "0") and not volumes.strip() and cron.strip() in ("", "0"):
         ui.ok(f"nothing of {name} on {remote.destination}")
         return 0

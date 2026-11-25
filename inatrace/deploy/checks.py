@@ -93,7 +93,8 @@ def _status_data(remote: Remote, instance: Instance) -> dict:
         "echo '#system'; . /etc/os-release; echo \"${PRETTY_NAME:-$ID}\"; "
         "docker version --format '{{.Server.Version}}'; df -P -B1 / | tail -1; "
         "free -b | awk '/^Mem:/ {print $2, $7}'; cut -d' ' -f1 /proc/loadavg; nproc; "
-        "echo '#database'; docker inspect -f '{{.Created}}' $(docker compose ps -aq mysql) 2>/dev/null; "
+        "echo '#database'; docker inspect -f '{{.Created}}' $(docker compose ps -aq "
+        + ("postgres" if instance.get("INATRACE_DATABASE", "mysql") == "postgresql" else "mysql") + ") 2>/dev/null; "
         "echo '#backups'; ls -1 backups 2>/dev/null | grep -- '-db.sql.gz$' | sort -r; "
         f"echo '#schedule'; crontab -l 2>/dev/null | grep -F {shlex.quote(CRON_MARK)}; date +%Z\n" + _USAGE_END,
         "the status")
@@ -133,7 +134,9 @@ def _status_data(remote: Remote, instance: Instance) -> dict:
         except ValueError:
             continue
         by_service[entry.get("Service", "")] = entry
-    for service in SERVICES + (MONITORING if instance.monitoring else ()):
+    db_service = "postgres" if instance.get("INATRACE_DATABASE", "mysql") == "postgresql" else "mysql"
+    expected = tuple(service for service in SERVICES if service not in ("mysql", "postgres") or service == db_service)
+    for service in expected + (MONITORING if instance.monitoring else ()):
         entry = by_service.get(service)
         if not entry:
             containers.append({"service": service, "state": "missing"})
@@ -326,6 +329,7 @@ def smoke(name: str, url: str | None, verbose: bool, extra: list[str]) -> int:
         "headers": {"X-Origin-Secret": secret} if secret else {},
         "swagger": instance.get("INATRACE_SWAGGER") == "on",
         "site": instance.get("INATRACE_SITE"), "secret": bool(secret),
+        "database": instance.get("INATRACE_DATABASE", "mysql"),
         "images": {part.lower(): f"{instance.get(f'INATRACE_{part}_IMAGE') or f'ghcr.io/agstack/inatrace-{part.lower()}'}"
                                  f":{instance.get(f'INATRACE_{part}_VERSION')}" for part in ("BACKEND", "FRONTEND")},
         "backup_days": int(instance.get("INATRACE_BACKUP_DAYS", "7") or 7),

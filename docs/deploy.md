@@ -188,6 +188,26 @@ Let's Encrypt allows 5 certificates alike a week: for tests that obtain them aga
 `INATRACE_TLS=acme-staging` uses its staging instead, with far higher limits and a CA no browser
 trusts; back to `acme`, the production certificate kept in the volume is used again.
 
+### Database engine
+
+MySQL remains the default. For a new PostgreSQL installation, select it with
+`inatrace deploy init <name> --database postgresql` or set
+`INATRACE_DATABASE=postgresql` in the instance's `.env` before its first
+deployment. PostgreSQL deployments use `postgis/postgis:18-3.7`, with the
+database volume mounted at `/var/lib/postgresql`. Use a backend image that includes the PostgreSQL JDBC driver,
+PostgreSQL dialect and migrations (the backend source at `v3.0.0-rc.2` includes
+them). The PostgreSQL role created by the deployment must be able to create the
+`unaccent` extension; the provided PostgreSQL container creates that role as a
+superuser. PostGIS is initialized by the image on a new database.
+
+Changing an existing instance's engine is not a migration and `deploy up`
+refuses the change. Moving data between database engines is not supported.
+The existing PostgreSQL volume must use major version 18; upgrading a version 17
+volume requires a separate migration and is not performed by `deploy up`.
+Backups made by the platform include the database engine in the SQL archive;
+restore rejects a backup for another engine before stopping the backend.
+Backups made before engine selection are treated as MySQL backups.
+
 ### The first admin
 
 New users register on the site, then an admin activates them; and a user who belongs to no
@@ -198,7 +218,8 @@ activate them, and a new installation has no company. One command makes them:
 inatrace deploy admin <name> you@example.org --company "Your organization" --create
 ```
 
-`--create` registers the user as the site's form would (from inside the server, so no DNS or
+`--create` registers the user as the site's form would (from the Caddy container over the
+Compose network, so no DNS or
 CDN in the way), asking the password twice, hidden; `INATRACE_DEPLOY_ADMIN_PASSWORD` gives it
 instead, and `--generate-password` makes one up and shows it once. Then the user becomes an
 active system admin, with a first company they administer. It changes the database directly,

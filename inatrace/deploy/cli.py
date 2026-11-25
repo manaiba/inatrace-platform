@@ -34,6 +34,7 @@ def _deploy(action, *args) -> None:
 
 Front = Enum("Front", {f: f for f in FRONTS}, type=str)
 Cdn = Enum("Cdn", {c: c for c in (*CDN_HEADERS, "other")}, type=str)
+Database = Enum("Database", {d: d for d in ("mysql", "postgresql")}, type=str)
 _ANSWER = "Answers (each skips its question)"
 
 
@@ -63,6 +64,8 @@ def init(
     backend_version: Annotated[Optional[str], typer.Option(rich_help_panel=_ANSWER)] = None,
     frontend_image: Annotated[Optional[str], typer.Option(rich_help_panel=_ANSWER)] = None,
     frontend_version: Annotated[Optional[str], typer.Option(rich_help_panel=_ANSWER)] = None,
+    database: Annotated[Optional[Database], typer.Option(help="Database engine for a new instance.",
+                                                         rich_help_panel=_ANSWER)] = None,
     mail: Annotated[Optional[bool], typer.Option("--mail/--no-mail",
                                                  help="Enable e-mail sending support (an SMTP server).",
                                                  rich_help_panel=_ANSWER)] = None,
@@ -93,6 +96,7 @@ def init(
              "cdn-header": cdn_header, "origin-secret": origin_secret, "swagger": swagger,
              "backend-image": backend_image, "backend-version": backend_version,
              "frontend-image": frontend_image, "frontend-version": frontend_version,
+             "database": database.value if database else None,
              "mail": mail, "mail-host": mail_host, "mail-port": mail_port,
              "mail-username": mail_username, "mail-password": mail_password, "mail-from": mail_from,
              "monitoring": monitoring, "restore": restore}

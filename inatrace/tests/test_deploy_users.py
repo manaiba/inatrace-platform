@@ -58,7 +58,7 @@ class AdminTest(unittest.TestCase):
 
 
 class CreateTest(unittest.TestCase):
-    """--create: registers the user first, from inside the backend's container."""
+    """--create: registers the user first, from the Caddy container."""
 
     def run_create(self, *flags: str, exists: bool = False, env: dict | None = None):
         def quiet(command, body=None):
@@ -80,6 +80,8 @@ class CreateTest(unittest.TestCase):
         result, registered = self.run_create("--create", env={"INATRACE_DEPLOY_ADMIN_PASSWORD": "a-long-secret"})
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertEqual(len(registered), 1)
+        self.assertIn("docker compose exec -T caddy curl", registered[0].args[0])
+        self.assertIn("http://backend:8080/api/user/register", registered[0].args[0])
         self.assertNotIn("a-long-secret", registered[0].args[0])
         self.assertEqual(json.loads(registered[0].args[1])["password"], "a-long-secret")
         self.assertIn("is now an active system admin", result.output)

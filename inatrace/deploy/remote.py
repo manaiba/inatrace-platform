@@ -306,7 +306,7 @@ class Changes:
 
 
 # The Compose services, the way in first; and the monitoring's, when it is on.
-SERVICES = ("caddy", "frontend", "backend", "mysql")
+SERVICES = ("caddy", "frontend", "backend", "mysql", "postgres")
 MONITORING = ("beszel", "beszel-agent")
 
 # Services that read files from ~/inatrace: Compose recreates a container when its

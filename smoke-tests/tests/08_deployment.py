@@ -17,7 +17,8 @@ MONITORING = ("beszel", "beszel-agent")
 @pytest.fixture(scope="module")
 def services(stack) -> tuple[str, ...]:
     """The containers that should run there: the monitoring's too, when it is on."""
-    return SERVICES + (MONITORING if stack.spec.get("monitoring") else ())
+    base = ("caddy", "frontend", "backend", "postgres") if stack.spec.get("database") == "postgresql" else SERVICES
+    return base + (MONITORING if stack.spec.get("monitoring") else ())
 
 
 @pytest.fixture(scope="module")
@@ -141,7 +142,8 @@ def test_recent_backup(stack, detail):
                            check=False).stdout.split()
     if not found:
         # A new deployment, before its first scheduled backup: not a failure yet.
-        created = stack.service("mysql").inspect("{{.Created}}")[:19]
+        db = "postgres" if stack.spec.get("database") == "postgresql" else "mysql"
+        created = stack.service(db).inspect("{{.Created}}")[:19]
         new = datetime.datetime.now(datetime.timezone.utc) - datetime.datetime.fromisoformat(created).replace(
             tzinfo=datetime.timezone.utc) < datetime.timedelta(hours=25)
         if new and stack.spec.get("backup_schedule", "@daily") != "off":
