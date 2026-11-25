@@ -66,7 +66,7 @@ class EnvTest(unittest.TestCase):
         compose = (paths.DEPLOY_SERVER / "compose.yaml").read_text()
         keys = set(re.findall(r"^#?([A-Z][A-Z0-9_]*)=", instance_.EXAMPLE.read_text(), re.M))
         cli_only = {"INATRACE_SSH", "INATRACE_BACKUP_DAYS", "INATRACE_BACKUP_SCHEDULE", "INATRACE_MONITORING",
-                    "COMPOSE_PROFILES"}
+                    "COMPOSE_PROFILES", "INATRACE_DATABASE"}
         for key in keys - cli_only:
             self.assertIn("${" + key, compose, key)
 

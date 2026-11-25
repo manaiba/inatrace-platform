@@ -13,7 +13,7 @@ from inatrace.tests.deploy_fixtures import VALID
 
 class StatusTest(unittest.TestCase):
     def run_status(self, containers: list[dict], codes: str = "200 401", backups=("20261009T134130Z",),
-                   database: str = "", schedule: bool = False) -> tuple[int, str]:
+                   database: str = "", schedule: bool = False, engine: str = "mysql") -> tuple[int, str]:
         found = "\n".join(["#containers", *(json.dumps(c) for c in containers), "#site", codes,
                            "#system", "Ubuntu 26.04 LTS", "29.9.0", "/dev/vda1 25000000000 5000000000 x 20% /",
                            "4000000000 3000000000", "0.15", "2",
@@ -22,7 +22,7 @@ class StatusTest(unittest.TestCase):
                              if schedule else []),
                            "#usage", "backend 1000 501000 524288000", "interval 1000000000"])
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(paths, "DEPLOY_INSTANCES", Path(tmp)):
-            instance_.save(instance_.Instance("demo", dict(VALID)))
+            instance_.save(instance_.Instance("demo", {**VALID, "INATRACE_DATABASE": engine}))
             with mock.patch.object(checks, "deployed") as deployed, \
                     mock.patch.object(ui, "out", ui.Console(record=True, width=120)) as out:
                 deployed.return_value.must.return_value = found
@@ -31,7 +31,22 @@ class StatusTest(unittest.TestCase):
         return code, out.export_text()
 
     RUNNING = [{"Service": s, "State": "running", "Health": "", "Image": f"x/{s}:1", "Status": "Up 5 minutes"}
-               for s in remote.SERVICES]
+               for s in remote.SERVICES if s != "postgres"]
+
+    def test_postgresql_does_not_expect_mysql(self):
+        containers = [c for c in self.RUNNING if c["Service"] != "mysql"]
+        containers.append({"Service": "postgres", "State": "running", "Health": "healthy",
+                           "Image": "postgres:17", "Status": "Up 5 minutes"})
+        code, text = self.run_status(containers, engine="postgresql")
+        self.assertEqual(code, 0)
+        self.assertIn("postgres", text)
+        self.assertNotIn("mysql", text)
+
+    def test_mysql_does_not_expect_postgresql(self):
+        code, text = self.run_status(self.RUNNING)
+        self.assertEqual(code, 0)
+        self.assertIn("mysql", text)
+        self.assertNotIn("postgres", text)
 
     def test_all_well(self):
         code, text = self.run_status(self.RUNNING)

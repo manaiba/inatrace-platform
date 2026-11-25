@@ -375,6 +375,8 @@ def wizard(name: str, given: dict[str, object] | None = None, auto_approve: bool
     _ask_address(ask, values, old, remote, probe)
     _ask_front(ask, values, old)
     _ask_images(ask, values, old)
+    if ask.has("database"):
+        values["INATRACE_DATABASE"] = ask.choose("database", "Database engine", ("mysql", "postgresql"), "mysql")
     _ask_mail(ask, values, old)
     _ask_monitoring(ask, values, old)
     _ask_restore(ask, instance, plan)

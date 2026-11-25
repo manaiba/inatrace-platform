@@ -204,6 +204,13 @@ class Stack:
         """A query as the application's database user (the container knows it). Against a
         stack the tests may not write to, in a read-only session: a write fails."""
         log.info("SQL: %s", query)
+        if getattr(self, "spec", {}).get("database") == "postgresql":
+            if not self.writes:
+                query = f"SET default_transaction_read_only = on; {query}"
+            result = self.host.run("docker", "exec", "-i", self._container("postgres"), "sh", "-c",
+                                   'exec psql -X -q -A -t -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"',
+                                   input=query)
+            return result.stdout.strip()
         if not self.writes:
             query = f"SET SESSION TRANSACTION READ ONLY; {query}"
         result = self.host.run("docker", "exec", "-i", self._container("mysql"), "sh", "-c",
@@ -252,6 +259,8 @@ class Deployment(Stack):
         self.name = f"deployment {spec['name']}"
         self.swagger = spec.get("swagger", False)
         self.spec = spec
+        if spec.get("database") == "postgresql":
+            self.needs = ("caddy", "frontend", "backend", "postgres")
 
 
 def target() -> Stack:

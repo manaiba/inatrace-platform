@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .. import config, paths
 from .common import DeployError
+from . import database
 
 EXAMPLE = paths.DEPLOY_DIR / ".env.example"
 
@@ -102,6 +103,10 @@ def is_ip(text: str) -> bool:
 def problems(values: dict[str, str]) -> list[str]:
     """What is wrong or missing in an instance's settings, in words."""
     found = [f"{key} is empty" for key in REQUIRED if not values.get(key)]
+    try:
+        database.engine(values)
+    except DeployError as error:
+        found.append(str(error))
     site = values.get("INATRACE_SITE", "")
     if site and not (is_ip(site) or DOMAIN.match(site)):
         found.append(f"INATRACE_SITE={site} is neither a domain nor an IP address (no https://, no path)")
@@ -192,6 +197,9 @@ def server_files(instance: Instance) -> dict[str, Path]:
     on a clash."""
     files = {str(path.relative_to(paths.DEPLOY_SERVER)): path
              for path in sorted(paths.DEPLOY_SERVER.rglob("*")) if path.is_file()}
+    if database.engine(instance.values) == "postgresql":
+        files.update({name: paths.DEPLOY_DIR / "postgresql" / name
+                      for name in ("compose.yaml", "backend.properties")})
     files[LOCAL_PROPERTIES] = paths.DEPLOY_DIR / LOCAL_PROPERTIES
     files.update(instance_files(instance))
     return files

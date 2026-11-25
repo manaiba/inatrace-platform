@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Dumps MySQL and archives the uploads into backups/, as <time>-db.sql.gz and
 # <time>-storage.tar.gz, then removes those older than INATRACE_BACKUP_DAYS days (from
 # .env, default 7): the one just made always stays. Run it here, next to compose.yaml,
@@ -10,6 +10,7 @@
 #
 # The copies stay on this server: copying them elsewhere is up to you.
 set -eu
+set -o pipefail
 cd "$(dirname "$0")"
 
 days=$(sed -n 's/^INATRACE_BACKUP_DAYS=//p' .env 2>/dev/null | tail -n 1)
@@ -18,18 +19,27 @@ case $days in
     ''|*[!0-9]*|0) echo "backup: INATRACE_BACKUP_DAYS must be a number of days, 1 or more" >&2; exit 1 ;;
 esac
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
+engine=$(sed -n 's/^INATRACE_DATABASE=//p' .env | tail -n 1)
+engine=${engine:-mysql}
+case "$engine" in mysql) dbservice=mysql ;; postgresql) dbservice=postgres ;; *) echo "backup: unknown database engine" >&2; exit 1 ;; esac
 mkdir -p backups
 [ "${1:-}" = --scheduled ] && echo "backup: scheduled, $(date -u '+%Y-%m-%d %H:%M UTC')"
-if [ -z "$(docker compose ps -q --status running mysql 2>/dev/null)" ]; then
-    echo "backup: MySQL is not running (inatrace deploy up starts it)"
+if [ -z "$(docker compose ps -q --status running "$dbservice" 2>/dev/null)" ]; then
+    echo "backup: $dbservice is not running (inatrace deploy up starts it)"
     [ "${1:-}" = --scheduled ] && exit 0
     exit 1
 fi
 
 echo "backup: database -> backups/$stamp-db.sql.gz"
-docker compose exec -T -u mysql mysql sh -c \
-    'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers --databases inatrace' \
-    | gzip > "backups/$stamp-db.sql.gz.part"
+{
+    echo "-- INATRACE_DATABASE=$engine"
+    if [ "$engine" = postgresql ]; then
+        docker compose exec -T postgres sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-privileges'
+    else
+        docker compose exec -T -u mysql mysql sh -c \
+            'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers --databases inatrace'
+    fi
+} | gzip > "backups/$stamp-db.sql.gz.part"
 mv "backups/$stamp-db.sql.gz.part" "backups/$stamp-db.sql.gz"
 
 echo "backup: uploads -> backups/$stamp-storage.tar.gz"

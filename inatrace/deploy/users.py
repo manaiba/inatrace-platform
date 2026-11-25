@@ -1,6 +1,7 @@
 """`deploy admin`: the first admin (registered here if need be), and a first company for them."""
 
 import json
+import re
 import secrets
 import shlex
 import string
@@ -9,6 +10,7 @@ from rich.markup import escape
 
 from .. import ui
 from .common import DeployError, would
+from . import database
 from .instance import EMAIL, load
 from .remote import deployed
 
@@ -22,6 +24,9 @@ MIN_PASSWORD = 8
 _MYSQL = ("docker compose exec -T -u mysql mysql sh -c "
           + shlex.quote('exec mysql -N -B --default-character-set=utf8mb4 -uroot '
                         '-p"$MYSQL_ROOT_PASSWORD" inatrace 2>/dev/null'))
+_POSTGRES = ("docker compose exec -T postgres sh -c "
+             + shlex.quote('exec psql -X -A -t -F "$(printf \'\\t\')" -v ON_ERROR_STOP=1 '
+                           '-U "$POSTGRES_USER" -d "$POSTGRES_DB"'))
 
 
 def _password(given: str | None, generate: bool) -> tuple[str, bool]:
@@ -49,11 +54,11 @@ def _password(given: str | None, generate: bool) -> tuple[str, bool]:
 
 
 def _register(remote, email: str, password: str, first_name: str, last_name: str) -> None:
-    """Registers the user as the site's form would, from inside the backend's container:
+    """Registers the user as the site's form would, from inside Caddy's container:
     no DNS, CDN or secret header in the way, and the password only on stdin."""
     body = json.dumps({"email": email, "password": password, "name": first_name, "surname": last_name})
-    result = remote.quiet("docker compose exec -T backend curl -s -X POST -H 'Content-Type: application/json' "
-                          "--data-binary @- http://127.0.0.1:8080/api/user/register", body)
+    result = remote.quiet("docker compose exec -T caddy curl -s -X POST -H 'Content-Type: application/json' "
+                          "--data-binary @- http://backend:8080/api/user/register", body)
     try:
         answer = json.loads(result.stdout)
     except ValueError:
@@ -77,7 +82,9 @@ def admin(name: str, email: str, company: str | None = None, dry_run: bool = Fal
     if (password is not None or generate) and not create:
         raise DeployError("a password is for a new user: add --create")
     instance = load(name)
-    user, firm = _sql_text(email), _sql_text(company.strip()) if company else "NULL"
+    postgres = database.engine(instance.values) == "postgresql"
+    sql_text = (lambda value: "'" + value.replace("'", "''") + "'") if postgres else _sql_text
+    user, firm = sql_text(email), sql_text(company.strip()) if company else "NULL"
     # What is there now, one tab-separated line each: the user, the company, the link.
     look = (f"SELECT 'user', id, role, status FROM User WHERE email={user}; "
             f"SELECT 'company', id, status FROM Company WHERE name={firm} ORDER BY id LIMIT 1; "
@@ -94,10 +101,23 @@ def admin(name: str, email: str, company: str | None = None, dry_run: bool = Fal
                    "INSERT INTO CompanyUser (entityVersion, role, company_id, user_id) "
                    "SELECT 0, 'COMPANY_ADMIN', @c, @u FROM DUAL WHERE @u IS NOT NULL AND @c IS NOT NULL "
                    "AND NOT EXISTS (SELECT 1 FROM CompanyUser WHERE company_id=@c AND user_id=@u); ")
+    if postgres:
+        # PostgreSQL has no MySQL session variables or DUAL.
+        look = re.sub(r'\bUser\b', '"User"', look)
+        change = (f"UPDATE \"User\" SET role='SYSTEM_ADMIN', status='ACTIVE' WHERE email={user}; ")
+        if company:
+            change += (f"INSERT INTO Company (entityVersion, name, status) SELECT 0, {firm}, 'ACTIVE' "
+                       f"WHERE EXISTS (SELECT 1 FROM \"User\" WHERE email={user}) "
+                       f"AND NOT EXISTS (SELECT 1 FROM Company WHERE name={firm}); "
+                       f"INSERT INTO CompanyUser (entityVersion, role, company_id, user_id) "
+                       f"SELECT 0, 'COMPANY_ADMIN', c.id, u.id FROM Company c CROSS JOIN \"User\" u "
+                       f"WHERE u.email={user} AND c.id=(SELECT id FROM Company WHERE name={firm} ORDER BY id LIMIT 1) "
+                       "AND NOT EXISTS (SELECT 1 FROM CompanyUser cu WHERE cu.company_id=c.id AND cu.user_id=u.id); ")
     remote = deployed(instance)
     shown_password = None
     if create:
-        found = remote.quiet(_MYSQL, f"SELECT id FROM User WHERE email={user};")
+        found = remote.quiet(_POSTGRES if postgres else _MYSQL,
+                             f'SELECT id FROM {chr(34) + "User" + chr(34) if postgres else "User"} WHERE email={user};')
         if found.returncode:
             raise DeployError(f"on {remote.destination}: {found.stdout.strip() or 'the database did not answer'}")
         if not found.stdout.strip():
@@ -113,7 +133,8 @@ def admin(name: str, email: str, company: str | None = None, dry_run: bool = Fal
             shown_password = secret if generated else None
         else:
             ui.info(f"{email} is registered already: its password stays")
-    result = remote.quiet(_MYSQL, look if dry_run else f"START TRANSACTION; {look} {change} COMMIT;")
+    result = remote.quiet(_POSTGRES if postgres else _MYSQL,
+                          look if dry_run else f"START TRANSACTION; {look} {change} COMMIT;")
     if result.returncode:
         raise DeployError(f"on {remote.destination}: {result.stdout.strip() or 'the database did not answer'}")
     found = {fields[0]: fields[1:] for fields in (line.split("\t") for line in result.stdout.splitlines())}
